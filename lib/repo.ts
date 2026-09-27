@@ -495,7 +495,19 @@ export class IndexedDBRepository implements Repository {
     }));
   }
 
+  /**
+   * Transient machine states ("processing", "failed") must never overwrite a
+   * durable human one. A reviewed cell stays reviewed while a re-extraction runs
+   * over it, and stays reviewed if that run then fails; job progress is reported
+   * at the job level instead.
+   */
   async setCellStatus(projectId: Id, rowId: Id, columnId: Id, status: CellStatus, flagNote?: string) {
+    if (status === "processing" || status === "failed") {
+      const existing = await (await this.db()).get("cells", cellId(rowId, columnId));
+      const humanOwned =
+        existing && (existing.userValue !== undefined || existing.status === "reviewed" || existing.status === "flagged");
+      if (humanOwned) return existing;
+    }
     return this.upsert(projectId, rowId, columnId, (cell) => ({
       ...cell,
       status,
