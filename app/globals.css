@@ -1,0 +1,143 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * Paplora's surface: paper white, ink, one muted teal accent. Restrained on
+ * purpose — the table and the document are the interface; nothing else should
+ * compete with them for attention.
+ */
+
+:root {
+  --color-paper: #f7f7f4;
+  --color-surface: #ffffff;
+  --color-sunken: #f1f1ed;
+  --color-ink: #1b1c1a;
+  --color-muted: #6a6c66;
+  --color-faint: #93958e;
+  --color-line: #e2e2dc;
+  --color-line-strong: #cfcfc7;
+  --color-accent: #2c6357;
+  --color-accent-soft: #e7efec;
+  --color-warn: #8a5a12;
+  --color-warn-soft: #f7efdf;
+  --color-alarm: #8c3a2e;
+  --color-alarm-soft: #f8e9e6;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  /*
+   * A single dark mapping. The table stays high-contrast because reading small
+   * numbers side by side is the whole job.
+   */
+  :root:not([data-theme="light"]) {
+    --color-paper: #16171a;
+    --color-surface: #1d1f22;
+    --color-sunken: #242629;
+    --color-ink: #ecece8;
+    --color-muted: #a3a59d;
+    --color-faint: #7d7f78;
+    --color-line: #32353a;
+    --color-line-strong: #454950;
+    --color-accent: #7fb8a8;
+    --color-accent-soft: #23342f;
+    --color-warn: #d9ab62;
+    --color-warn-soft: #33291a;
+    --color-alarm: #e09080;
+    --color-alarm-soft: #34221f;
+  }
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* One visible focus treatment everywhere, including inside the table. */
+:where(a, button, input, textarea, select, [tabindex]):focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-[13px] font-medium transition-colors;
+    border-color: var(--color-line-strong);
+    background: var(--color-surface);
+    color: var(--color-ink);
+  }
+  .btn:hover:not(:disabled) {
+    background: var(--color-sunken);
+  }
+  .btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .btn-primary {
+    background: var(--color-accent);
+    border-color: var(--color-accent);
+    color: #fff;
+  }
+  .btn-primary:hover:not(:disabled) {
+    filter: brightness(1.08);
+    background: var(--color-accent);
+  }
+  .btn-ghost {
+    border-color: transparent;
+    background: transparent;
+    color: var(--color-muted);
+  }
+  .btn-ghost:hover:not(:disabled) {
+    background: var(--color-sunken);
+    color: var(--color-ink);
+  }
+  .field {
+    @apply w-full rounded-md border px-2.5 py-1.5 text-[13px];
+    border-color: var(--color-line-strong);
+    background: var(--color-surface);
+    color: var(--color-ink);
+  }
+  .field::placeholder {
+    color: var(--color-faint);
+  }
+  .card {
+    @apply rounded-lg border;
+    border-color: var(--color-line);
+    background: var(--color-surface);
+  }
+  .chip {
+    @apply inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[11px] font-medium;
+    border-color: var(--color-line);
+    background: var(--color-sunken);
+    color: var(--color-muted);
+  }
+  .label-text {
+    @apply block text-[12px] font-medium;
+    color: var(--color-muted);
+  }
+}
+
+/* The evidence highlight sits above the rendered page, never inside it. */
+.evidence-box {
+  position: absolute;
+  background: color-mix(in srgb, var(--color-accent) 26%, transparent);
+  border-bottom: 2px solid var(--color-accent);
+  pointer-events: none;
+  mix-blend-mode: multiply;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .evidence-box {
+    mix-blend-mode: screen;
+  }
+}
