@@ -20,7 +20,7 @@ The root URL **is** the workspace. There is no landing page, no sign-up and no o
 
 ```bash
 npm run typecheck   # tsc --noEmit
-npm test            # 49 tests, node:test + tsx, no network and no keys needed
+npm test            # 53 tests, node:test + tsx, no network and no keys needed
 npm run build       # production build
 npm run samples     # regenerate the demo PDFs in public/samples/
 ```
@@ -63,6 +63,8 @@ The interesting part of this app is what it refuses to show.
 3. **Deterministic verification.** Every quote is located in the page text we extracted, matching through ligatures, soft hyphens, smart quotes and line wrapping, but always returning offsets into the *original* characters. A quote that cannot be found is dropped. **An answer claiming a result with no surviving quote never becomes a value** — it is reported as rejected.
 4. **Nothing is "grounded" by default.** A resolvable citation proves the text exists in the document. It does **not** prove the text supports the answer. Only a human marking the cell reviewed does that, and the UI says this in as many words.
 5. **Honest states.** `not found` (we read the text; it isn't there) is distinct from `unreadable` (we could not read the relevant content at all), `ambiguous` (the paper reports conflicting values), `failed`, and `stale` (the column instruction changed after this answer was produced). There are no confidence percentages, because no one can calibrate them.
+
+**Extraction scopes:** the whole project (header "Extract"), one paper (row ⋯ → "Extract this paper"), one column (column ⋯ → "Extract this column"), or a single cell (evidence panel → "Ask AI again"). Bulk runs skip cells you have answered yourself, so they never queue a proposal over your own work.
 
 ### Comparison without false rankings
 
@@ -121,7 +123,7 @@ app/api/ai-status     truthful configuration status, never the key
 
 ## Verification status
 
-**49 tests pass** (`npm test`), covering: quote matching through ligatures and line wrapping; rejection of fabricated and too-short quotes; page fallback when the model miscounts; every verification outcome; bounded page windows and coverage reporting; model precedence and the no-silent-default rule; request shape, schema violations, truncated responses, provider error classification and cancellation in the live adapter; CSV quoting and formula injection; backup manifest validation and ZIP entry filtering; persistence across handles; shared-source deletion semantics in both directions; project isolation; stale marking that spares user edits; runner sequencing, retry, cancellation, resume, and the no-text-layer path; and that every sample fixture quote really exists in its demo PDF.
+**53 tests pass** (`npm test`), covering: quote matching through ligatures and line wrapping; rejection of fabricated and too-short quotes; page fallback when the model miscounts; every verification outcome; bounded page windows and coverage reporting; model precedence and the no-silent-default rule; request shape, schema violations, truncated responses, provider error classification and cancellation in the live adapter; CSV quoting and formula injection; backup manifest validation and ZIP entry filtering; persistence across handles; shared-source deletion semantics in both directions; project isolation; stale marking that spares user edits; runner sequencing, retry, cancellation, resume, and the no-text-layer path; a full backup round trip (project, split row, reviewed answer, evidence quote and PDF bytes all survive); and that every sample fixture quote really exists in its demo PDF.
 
 `npm run typecheck` and `npm run build` both pass. The built app was started and checked over HTTP: the workspace route, the AI-status endpoint, the PDF worker, the sample PDFs and the extract endpoint's unconfigured response all behave correctly.
 

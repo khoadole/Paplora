@@ -19,6 +19,22 @@ interface Highlight {
   end?: number;
 }
 
+/** One open document per version, so turning pages does not re-parse the file. */
+type PdfDocument = Awaited<ReturnType<typeof import("pdfjs-dist").getDocument>["promise"]>;
+const documentCache = new Map<string, Promise<PdfDocument>>();
+
+async function openDocument(versionId: string, bytes: ArrayBuffer) {
+  const cached = documentCache.get(versionId);
+  if (cached) return cached;
+  const promise = (async () => {
+    const pdfjs = await import("pdfjs-dist");
+    pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
+    return pdfjs.getDocument({ data: bytes.slice(0), isEvalSupported: false }).promise;
+  })();
+  documentCache.set(versionId, promise);
+  return promise;
+}
+
 export function PdfView({
   versionId,
   pageNumber,
@@ -37,6 +53,8 @@ export function PdfView({
   const [page, setPage] = useState<ParsedPage | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [query, setQuery] = useState("");
+  const [hits, setHits] = useState<{ pageNumber: number; snippet: string }[] | null>(null);
   const renderTask = useRef<{ cancel: () => void } | null>(null);
 
   useEffect(() => {
@@ -58,9 +76,7 @@ export function PdfView({
           return;
         }
 
-        const pdfjs = await import("pdfjs-dist");
-        pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
-        const doc = await pdfjs.getDocument({ data: bytes.slice(0), isEvalSupported: false }).promise;
+        const doc = await openDocument(versionId, bytes);
         if (cancelled) return;
         const pdfPage = await doc.getPage(Math.min(Math.max(pageNumber, 1), doc.numPages));
         const canvas = canvasRef.current;
@@ -125,12 +141,67 @@ export function PdfView({
             →
           </button>
         </div>
-        {boxes.length > 0 ? (
-          <span className="chip" title="The highlighted characters are where this quote was found.">
-            passage highlighted
-          </span>
-        ) : null}
+        <div className="flex items-center gap-1.5">
+          {boxes.length > 0 ? (
+            <span className="chip" title="The highlighted characters are where this quote was found.">
+              passage highlighted
+            </span>
+          ) : null}
+          <input
+            className="field w-40 py-1 text-[12px]"
+            placeholder="Find in document…"
+            value={query}
+            aria-label="Find in document (keyword)"
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={async (e) => {
+              if (e.key !== "Enter") return;
+              const needle = query.trim().toLowerCase();
+              if (needle.length < 2) {
+                setHits(null);
+                return;
+              }
+              const pages = await repo.getPages(versionId);
+              setHits(
+                pages
+                  .map((p) => {
+                    const at = p.text.toLowerCase().indexOf(needle);
+                    return at < 0
+                      ? null
+                      : {
+                          pageNumber: p.pageNumber,
+                          snippet: p.text.slice(Math.max(0, at - 40), at + needle.length + 60).replace(/\s+/g, " "),
+                        };
+                  })
+                  .filter((hit): hit is { pageNumber: number; snippet: string } => Boolean(hit)),
+              );
+            }}
+          />
+        </div>
       </div>
+
+      {hits ? (
+        <div className="border-b px-3 py-1.5 text-[12px]" style={{ borderColor: "var(--color-line)" }}>
+          {hits.length === 0 ? (
+            <span style={{ color: "var(--color-muted)" }}>No page contains “{query}”.</span>
+          ) : (
+            <>
+              <span style={{ color: "var(--color-muted)" }}>
+                {hits.length} page{hits.length === 1 ? "" : "s"} match — keyword search over the extracted text:
+              </span>
+              <ul className="mt-1 max-h-28 space-y-0.5 overflow-y-auto">
+                {hits.map((hit) => (
+                  <li key={hit.pageNumber}>
+                    <button className="text-left hover:underline" onClick={() => onPageChange(hit.pageNumber)}>
+                      <span className="font-medium">p.{hit.pageNumber}</span>{" "}
+                      <span style={{ color: "var(--color-muted)" }}>…{hit.snippet}…</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+        </div>
+      ) : null}
 
       <div ref={containerRef} className="flex-1 overflow-auto p-2" style={{ background: "var(--color-sunken)" }}>
         {error ? (

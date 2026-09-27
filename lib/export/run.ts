@@ -273,9 +273,6 @@ export async function restoreBackup(repo: Repository, file: File): Promise<Resto
   if (!manifestBytes) throw new Error("This ZIP has no manifest.json, so it is not a Paplora backup.");
   const manifest = parseManifest(manifestBytes);
 
-  const db = repo as unknown as { open?: () => Promise<unknown> };
-  void db;
-
   for (const source of manifest.sources) {
     const existing = await repo.getSource(source.id);
     if (existing) continue;

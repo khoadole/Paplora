@@ -25,14 +25,17 @@ export function EvidencePanel({ onClose }: { onClose?: () => void }) {
   const version = source ? ws.versions[source.id] : undefined;
   const spans = useMemo(() => cell?.proposal?.evidence ?? [], [cell]);
 
-  // Opening a different cell jumps the document to that cell's first citation.
+  // Opening a different cell (or one whose evidence actually changed) jumps the
+  // document to the first citation. Keyed on content, not array identity, so a
+  // background reload during extraction cannot wipe an edit in progress.
+  const spanKey = spans.map((s) => `${s.pageNumber}:${s.quote}`).join("|");
   useEffect(() => {
     setActiveSpan(0);
     setDraft(null);
     setShowFlag(false);
     setFlagNote("");
-    setPageNumber(spans[0]?.pageNumber ?? 1);
-  }, [ws.selected?.rowId, ws.selected?.columnId, spans]);
+    setPageNumber(Number(spanKey.split(":")[0]) || 1);
+  }, [ws.selected?.rowId, ws.selected?.columnId, spanKey]);
 
   if (!ws.selected || !row || !column) {
     return (

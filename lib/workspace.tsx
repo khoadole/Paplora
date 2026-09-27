@@ -299,7 +299,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       uploadFiles: async (files) => {
         if (!projectId) return [];
         return withBusy("Reading PDFs…", async () => {
-          const outcomes: UploadOutcome[] = [];
+          const outcomes: UploadOutcome[] = files.slice(MAX_FILES_PER_BATCH).map((file) => ({
+            filename: file.name,
+            status: "rejected" as const,
+            message: `Over the ${MAX_FILES_PER_BATCH}-file batch limit. Add it in the next batch.`,
+          }));
           for (const file of files.slice(0, MAX_FILES_PER_BATCH)) {
             if (file.size > MAX_FILE_BYTES) {
               outcomes.push({
@@ -470,7 +474,15 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           rows,
           columns,
           targets,
-          onUpdate: (updated) => setJob(updated),
+          onUpdate: (updated) => {
+            setJob((previous) => {
+              // Reload the table whenever another cell finishes, not only at the end.
+              if (!previous || updated.completed + updated.failed !== previous.completed + previous.failed) {
+                void loadProject(projectId);
+              }
+              return updated;
+            });
+          },
         });
         handle.current = run;
         await run.done;
@@ -489,7 +501,14 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           question: project.question,
           rows,
           columns,
-          onUpdate: (updated) => setJob(updated),
+          onUpdate: (updated) => {
+            setJob((previous) => {
+              if (!previous || updated.completed + updated.failed !== previous.completed + previous.failed) {
+                void loadProject(projectId);
+              }
+              return updated;
+            });
+          },
         });
         handle.current = run;
         setResumable(null);
@@ -535,4 +554,22 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
 
 export function cellFor(cells: Cell[], rowId: string, columnId: string) {
   return cells.find((c) => c.rowId === rowId && c.columnId === columnId);
+}
+
+/** A cell the user owns is never re-extracted in bulk: it would only park a proposal nobody asked for. */
+export function isHumanOwned(cell: Cell | undefined) {
+  return Boolean(cell && (cell.userValue !== undefined || cell.status === "reviewed" || cell.status === "flagged"));
+}
+
+/** Targets for a bulk run: everything except cells the user has already answered. */
+export function bulkTargets(
+  cells: Cell[],
+  rows: { id: string }[],
+  columns: { id: string }[],
+): SelectedCell[] {
+  return rows.flatMap((row) =>
+    columns
+      .filter((column) => !isHumanOwned(cellFor(cells, row.id, column.id)))
+      .map((column) => ({ rowId: row.id, columnId: column.id })),
+  );
 }

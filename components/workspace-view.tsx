@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useWorkspace } from "@/lib/workspace";
+import { bulkTargets, useWorkspace } from "@/lib/workspace";
 import { ComparisonTable } from "./comparison-table";
 import { EvidencePanel } from "./evidence-panel";
 import { LibraryView } from "./library-view";
@@ -271,7 +271,8 @@ function ProjectHeader({
   if (!ws.project) return null;
   const project = ws.project;
   const running = ws.job?.stage === "extracting" || ws.job?.stage === "queued";
-  const allTargets = ws.rows.flatMap((row) => ws.columns.map((column) => ({ rowId: row.id, columnId: column.id })));
+  // Cells the user has already answered are left alone; the tooltip says so.
+  const allTargets = bulkTargets(ws.cells, ws.rows, ws.columns);
 
   return (
     <header className="border-b px-3 py-2.5 sm:px-4" style={{ borderColor: "var(--color-line)" }}>
@@ -345,7 +346,11 @@ function ProjectHeader({
             className="btn btn-primary"
             onClick={() => ws.extract(allTargets)}
             disabled={!ws.aiStatus?.configured || running || !allTargets.length}
-            title={ws.aiStatus?.configured ? "Extract every empty and stale cell" : ws.aiStatus?.reason}
+            title={
+              ws.aiStatus?.configured
+                ? `Extract the ${allTargets.length} cell(s) you have not answered yourself`
+                : ws.aiStatus?.reason
+            }
           >
             {running ? "Extracting…" : "Extract"}
           </button>

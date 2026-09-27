@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { cellFor, useWorkspace } from "@/lib/workspace";
+import { bulkTargets, cellFor, useWorkspace } from "@/lib/workspace";
 import { StatusChip } from "./status";
 import { displayValue } from "@/lib/export/run";
 import type { CellStatus, Column } from "@/lib/types";
@@ -31,6 +31,7 @@ export function ComparisonTable() {
   const [editingColumn, setEditingColumn] = useState<Column | null>(null);
   const [splitFor, setSplitFor] = useState<string | null>(null);
   const [splitLabel, setSplitLabel] = useState("");
+  const running = ws.job?.stage === "extracting" || ws.job?.stage === "queued";
 
   const visibleRows = useMemo(() => {
     let list = ws.rows;
@@ -293,6 +294,14 @@ export function ComparisonTable() {
                           >
                             Add a configuration row
                           </button>
+                          <button
+                            className="btn"
+                            onClick={() => ws.extract(bulkTargets(ws.cells, [row], ws.columns))}
+                            disabled={!ws.aiStatus?.configured || running}
+                            title={ws.aiStatus?.configured ? "Extract every unanswered cell in this row" : ws.aiStatus?.reason}
+                          >
+                            Extract this paper
+                          </button>
                           <button className="btn btn-ghost" onClick={() => setSplitFor(null)}>
                             Cancel
                           </button>
@@ -461,6 +470,14 @@ function ColumnEditor({ column, onClose }: { column: Column | null; onClose: () 
         </button>
         <button className="btn" onClick={onClose}>
           Cancel
+        </button>
+        <button
+          className="btn"
+          onClick={() => ws.extract(bulkTargets(ws.cells, ws.rows, [draft]))}
+          disabled={!ws.aiStatus?.configured || !ws.rows.length}
+          title={ws.aiStatus?.configured ? "Extract this column for every paper" : ws.aiStatus?.reason}
+        >
+          Extract this column
         </button>
         <button
           className="btn btn-ghost ml-auto"
