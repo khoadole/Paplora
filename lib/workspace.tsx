@@ -20,6 +20,7 @@ import type {
   Column,
   DocumentVersion,
   ExtractionJob,
+  Preferences,
   Project,
   Row,
   SourceDocument,
@@ -62,6 +63,9 @@ interface WorkspaceValue {
   resumable: ExtractionJob | null;
   aiStatus: { configured: boolean; model: string | null; reason?: string } | null;
   busy: string | null;
+  /** UI preferences: sidebar, panel width, density, theme, column layout. */
+  prefs: Preferences;
+  setPrefs: (patch: Partial<Preferences>) => void;
 
   selectProject: (id: string | null) => void;
   selectCell: (selection: SelectedCell | null) => void;
@@ -125,7 +129,17 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [resumable, setResumable] = useState<ExtractionJob | null>(null);
   const [aiStatus, setAiStatus] = useState<WorkspaceValue["aiStatus"]>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [prefs, setPrefsState] = useState<Preferences>({ id: "preferences" });
   const handle = useRef<RunHandle | null>(null);
+
+  /** Preference writes are optimistic: the UI must never wait on IndexedDB to move. */
+  const setPrefs = useCallback((patch: Partial<Preferences>) => {
+    setPrefsState((current) => {
+      const next = { ...current, ...patch, id: "preferences" as const };
+      void repo.savePreferences(patch);
+      return next;
+    });
+  }, []);
 
   const loadLibrary = useCallback(async () => {
     const all = await repo.listSources();
@@ -190,6 +204,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         const [all, prefs] = await Promise.all([repo.listProjects(), repo.getPreferences()]);
         if (cancelled) return;
         setProjects(all);
+        setPrefsState(prefs);
         const initial = prefs.lastProjectId && all.some((p) => p.id === prefs.lastProjectId)
           ? prefs.lastProjectId
           : all[0]?.id ?? null;
@@ -257,6 +272,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       resumable,
       aiStatus,
       busy,
+      prefs,
+      setPrefs,
 
       selectProject,
       selectCell: setSelected,
@@ -541,6 +558,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       resumable,
       aiStatus,
       busy,
+      prefs,
+      setPrefs,
       selectProject,
       loadProject,
       loadLibrary,

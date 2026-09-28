@@ -55,7 +55,7 @@ export function NewProjectDialog({ open, onOpenChange }: { open: boolean; onOpen
         </div>
         <div>
           <label className="label-text" htmlFor="project-question">
-            Research question <span style={{ color: "var(--color-faint)" }}>(optional)</span>
+            Research question <span style={{ color: "var(--text-3)" }}>(optional)</span>
           </label>
           <textarea
             id="project-question"
@@ -64,7 +64,7 @@ export function NewProjectDialog({ open, onOpenChange }: { open: boolean; onOpen
             onChange={(e) => setQuestion(e.target.value)}
             placeholder="Which methods run in real time on embedded hardware without losing accuracy?"
           />
-          <p className="mt-1 text-[11.5px]" style={{ color: "var(--color-faint)" }}>
+          <p className="mt-1 text-[11.5px]" style={{ color: "var(--text-3)" }}>
             Passed to the model as context when you extract, so answers stay on topic.
           </p>
         </div>
@@ -109,8 +109,8 @@ export function AddPapersDialog({ open, onOpenChange }: { open: boolean; onOpenC
       <div
         className="rounded-lg border-2 border-dashed p-6 text-center"
         style={{
-          borderColor: dragging ? "var(--color-accent)" : "var(--color-line-strong)",
-          background: dragging ? "var(--color-accent-soft)" : "transparent",
+          borderColor: dragging ? "var(--accent)" : "var(--border-2)",
+          background: dragging ? "var(--accent-weak)" : "transparent",
         }}
         onDragOver={(e) => {
           e.preventDefault();
@@ -124,7 +124,7 @@ export function AddPapersDialog({ open, onOpenChange }: { open: boolean; onOpenC
         }}
       >
         <p className="text-[13px] font-medium">Drop PDFs here</p>
-        <p className="mt-1 text-[12.5px]" style={{ color: "var(--color-muted)" }}>
+        <p className="mt-1 text-[12.5px]" style={{ color: "var(--text-2)" }}>
           or
         </p>
         <button className="btn mt-2" onClick={() => inputRef.current?.click()}>
@@ -141,7 +141,7 @@ export function AddPapersDialog({ open, onOpenChange }: { open: boolean; onOpenC
       </div>
 
       {ws.busy ? (
-        <p className="mt-3 text-[12.5px]" style={{ color: "var(--color-muted)" }} role="status">
+        <p className="mt-3 text-[12.5px]" style={{ color: "var(--text-2)" }} role="status">
           {ws.busy}
         </p>
       ) : null}
@@ -155,16 +155,16 @@ export function AddPapersDialog({ open, onOpenChange }: { open: boolean; onOpenC
                 style={{
                   color:
                     outcome.status === "rejected"
-                      ? "var(--color-alarm)"
+                      ? "var(--danger)"
                       : outcome.status === "reused"
-                        ? "var(--color-warn)"
-                        : "var(--color-accent)",
+                        ? "var(--warn)"
+                        : "var(--accent)",
                 }}
               >
                 {outcome.status === "added" ? "added" : outcome.status === "reused" ? "reused" : "not added"}
               </span>
               {outcome.message ? (
-                <span style={{ color: "var(--color-muted)" }}> — {outcome.message}</span>
+                <span style={{ color: "var(--text-2)" }}> — {outcome.message}</span>
               ) : null}
             </li>
           ))}
@@ -172,8 +172,8 @@ export function AddPapersDialog({ open, onOpenChange }: { open: boolean; onOpenC
       ) : null}
 
       {ws.library.length ? (
-        <div className="mt-5 border-t pt-4" style={{ borderColor: "var(--color-line)" }}>
-          <h3 className="text-[12px] font-semibold uppercase tracking-wide" style={{ color: "var(--color-muted)" }}>
+        <div className="mt-5 border-t pt-4" style={{ borderColor: "var(--border)" }}>
+          <h3 className="text-[12px] font-semibold uppercase tracking-wide" style={{ color: "var(--text-2)" }}>
             Reuse from your library
           </h3>
           <input
@@ -197,7 +197,7 @@ export function AddPapersDialog({ open, onOpenChange }: { open: boolean; onOpenC
               ))}
             </ul>
           ) : (
-            <p className="mt-2 text-[12.5px]" style={{ color: "var(--color-muted)" }}>
+            <p className="mt-2 text-[12.5px]" style={{ color: "var(--text-2)" }}>
               Every paper in your library is already in this project.
             </p>
           )}
@@ -302,23 +302,23 @@ export function AddColumnDialog({ open, onOpenChange }: { open: boolean; onOpenC
             value={instruction}
             onChange={(e) => setInstruction(e.target.value)}
           />
-          <p className="mt-1 text-[11.5px]" style={{ color: "var(--color-faint)" }}>
+          <p className="mt-1 text-[11.5px]" style={{ color: "var(--text-3)" }}>
             Be specific about conditions — “which split was this measured on” finds more honest answers than “accuracy”.
           </p>
         </div>
 
-        <div className="border-t pt-3" style={{ borderColor: "var(--color-line)" }}>
-          <h3 className="text-[12px] font-semibold uppercase tracking-wide" style={{ color: "var(--color-muted)" }}>
+        <div className="border-t pt-3" style={{ borderColor: "var(--border)" }}>
+          <h3 className="text-[12px] font-semibold uppercase tracking-wide" style={{ color: "var(--text-2)" }}>
             Or start from a preset
           </h3>
           <div className="mt-2 grid gap-2 sm:grid-cols-2">
             {PRESETS.map((preset) => (
               <div key={preset.id} className="card p-3">
                 <p className="text-[13px] font-medium">{preset.name}</p>
-                <p className="mt-1 text-[12px]" style={{ color: "var(--color-muted)" }}>
+                <p className="mt-1 text-[12px]" style={{ color: "var(--text-2)" }}>
                   {preset.description}
                 </p>
-                <p className="mt-1 text-[11.5px]" style={{ color: "var(--color-faint)" }}>
+                <p className="mt-1 text-[11.5px]" style={{ color: "var(--text-3)" }}>
                   {preset.columns.map((c) => c.label).join(" · ")}
                 </p>
                 <button className="btn mt-2" onClick={() => addPreset(preset.id)}>
@@ -353,7 +353,44 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
     >
       <div className="space-y-5">
         <section>
-          <h3 className="text-[12px] font-semibold uppercase tracking-wide" style={{ color: "var(--color-muted)" }}>
+          <h3 className="text-[12px] font-semibold uppercase tracking-wide" style={{ color: "var(--text-2)" }}>
+            Appearance
+          </h3>
+          <div className="mt-2 flex flex-wrap items-center gap-4">
+            <div>
+              <label className="label-text" htmlFor="pref-theme">
+                Theme
+              </label>
+              <select
+                id="pref-theme"
+                className="field w-auto"
+                value={ws.prefs.theme ?? "system"}
+                onChange={(e) => ws.setPrefs({ theme: e.target.value as "system" | "light" | "dark" })}
+              >
+                <option value="system">Match system</option>
+                <option value="light">Light</option>
+                <option value="dark">Dark</option>
+              </select>
+            </div>
+            <div>
+              <label className="label-text" htmlFor="pref-density">
+                Table density
+              </label>
+              <select
+                id="pref-density"
+                className="field w-auto"
+                value={ws.prefs.density ?? "comfortable"}
+                onChange={(e) => ws.setPrefs({ density: e.target.value as "comfortable" | "compact" })}
+              >
+                <option value="comfortable">Comfortable</option>
+                <option value="compact">Compact</option>
+              </select>
+            </div>
+          </div>
+        </section>
+
+        <section>
+          <h3 className="text-[12px] font-semibold uppercase tracking-wide" style={{ color: "var(--text-2)" }}>
             Automatic extraction
           </h3>
           <p className="mt-1.5 text-[13px]">
@@ -366,20 +403,35 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
             )}
           </p>
           {ws.aiStatus?.reason ? (
-            <p className="mt-1 text-[12.5px]" style={{ color: "var(--color-muted)" }}>
+            <p className="mt-1 text-[12.5px]" style={{ color: "var(--text-2)" }}>
               {ws.aiStatus.reason}
             </p>
           ) : null}
-          <p className="mt-1.5 text-[11.5px]" style={{ color: "var(--color-faint)" }}>
+          <p className="mt-1.5 text-[11.5px]" style={{ color: "var(--text-3)" }}>
             The key is read on the server only and is never sent to the browser or stored here.
           </p>
+          <details className="mt-2">
+            <summary className="cursor-pointer text-[12.5px]" style={{ color: "var(--accent)" }}>
+              How to turn it on
+            </summary>
+            <p className="mt-1.5 text-[12px]" style={{ color: "var(--text-2)" }}>
+              Add these to <code className="font-mono">.env.local</code> in the project folder and restart the dev
+              server. There is no default model on purpose: an unverified model name would misreport what produced your
+              answers.
+            </p>
+            <pre
+              className="mt-1.5 overflow-x-auto rounded-md p-2 font-mono text-[11.5px]"
+              style={{ background: "var(--surface-2)", color: "var(--text-2)" }}
+            >{`OPENAI_API_KEY=sk-...
+OPENAI_MODEL=<a model your account can call>`}</pre>
+          </details>
         </section>
 
         <section>
-          <h3 className="text-[12px] font-semibold uppercase tracking-wide" style={{ color: "var(--color-muted)" }}>
+          <h3 className="text-[12px] font-semibold uppercase tracking-wide" style={{ color: "var(--text-2)" }}>
             Backup
           </h3>
-          <p className="mt-1.5 text-[12.5px]" style={{ color: "var(--color-muted)" }}>
+          <p className="mt-1.5 text-[12.5px]" style={{ color: "var(--text-2)" }}>
             Everything lives in this browser on this device. Clearing site data erases it. A backup is a ZIP holding your
             projects, columns, cells, evidence and the original PDFs.
           </p>
@@ -435,11 +487,13 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
         </section>
 
         <section>
-          <h3 className="text-[12px] font-semibold uppercase tracking-wide" style={{ color: "var(--color-muted)" }}>
+          <h3 className="text-[12px] font-semibold uppercase tracking-wide" style={{ color: "var(--text-2)" }}>
             Sample project
           </h3>
-          <p className="mt-1.5 text-[12.5px]" style={{ color: "var(--color-muted)" }}>
-            The sample uses three fictional demo documents. It never mixes with your own papers.
+          <p className="mt-1.5 text-[12.5px]" style={{ color: "var(--text-2)" }}>
+            The sample project uses three short documents written for this demo. They are fictional: the papers, the
+            authors and every number in them are invented, and nothing in them refers to real research. They stay
+            separate from your own projects.
           </p>
           <div className="mt-2 flex flex-wrap gap-2">
             <button className="btn" onClick={() => ws.openSample()}>
@@ -452,7 +506,7 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
         </section>
 
         {message ? (
-          <p className="text-[12.5px]" role="status" style={{ color: "var(--color-accent)" }}>
+          <p className="text-[12.5px]" role="status" style={{ color: "var(--accent)" }}>
             {message}
           </p>
         ) : null}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { IconChevronLeft, IconChevronRight, IconSearch } from "./icons";
 import { repo } from "@/lib/repo";
 import { boxesForRange } from "@/lib/pdf/parse";
 import type { ParsedPage } from "@/lib/types";
@@ -118,38 +119,49 @@ export function PdfView({
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center justify-between gap-2 border-b px-3 py-1.5" style={{ borderColor: "var(--color-line)" }}>
-        <div className="flex items-center gap-1">
+      <div className="flex items-center justify-between gap-2 border-b px-3 py-1.5" style={{ borderColor: "var(--border)" }}>
+        <div className="flex shrink-0 items-center gap-0.5">
           <button
-            className="btn btn-ghost px-2 py-1"
+            className="btn btn-quiet btn-icon btn-sm"
             onClick={() => onPageChange(Math.max(1, pageNumber - 1))}
             disabled={pageNumber <= 1}
             aria-label="Previous page"
           >
-            ←
+            <IconChevronLeft size={15} />
           </button>
-          <span className="text-[12px] tabular-nums" style={{ color: "var(--color-muted)" }}>
-            Page {pageNumber}
-            {pageCount ? ` of ${pageCount}` : ""}
+          <span className="whitespace-nowrap px-1 text-[12px] tabular-nums" style={{ color: "var(--text-2)" }}>
+            {pageNumber}
+            {pageCount ? ` / ${pageCount}` : ""}
           </span>
           <button
-            className="btn btn-ghost px-2 py-1"
+            className="btn btn-quiet btn-icon btn-sm"
             onClick={() => onPageChange(Math.min(pageCount || pageNumber + 1, pageNumber + 1))}
             disabled={Boolean(pageCount) && pageNumber >= pageCount}
             aria-label="Next page"
           >
-            →
+            <IconChevronRight size={15} />
           </button>
-        </div>
-        <div className="flex items-center gap-1.5">
           {boxes.length > 0 ? (
-            <span className="chip" title="The highlighted characters are where this quote was found.">
-              passage highlighted
+            <span
+              className="ml-1 hidden shrink-0 xl:inline-flex"
+              title="The highlighted characters are where this quote was found."
+              style={{ color: "var(--accent)" }}
+            >
+              <span className="badge" style={{ background: "var(--accent-weak)", color: "var(--accent)", borderColor: "transparent" }}>
+                passage highlighted
+              </span>
             </span>
           ) : null}
+        </div>
+        <div className="relative min-w-0 flex-1">
+          <IconSearch
+            size={14}
+            className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2"
+            style={{ color: "var(--text-3)" }}
+          />
           <input
-            className="field w-40 py-1 text-[12px]"
-            placeholder="Find in document…"
+            className="field w-full pl-7 text-[12px]"
+            placeholder="Find in document"
             value={query}
             aria-label="Find in document (keyword)"
             onChange={(e) => setQuery(e.target.value)}
@@ -180,12 +192,12 @@ export function PdfView({
       </div>
 
       {hits ? (
-        <div className="border-b px-3 py-1.5 text-[12px]" style={{ borderColor: "var(--color-line)" }}>
+        <div className="border-b px-3 py-1.5 text-[12px]" style={{ borderColor: "var(--border)" }}>
           {hits.length === 0 ? (
-            <span style={{ color: "var(--color-muted)" }}>No page contains “{query}”.</span>
+            <span style={{ color: "var(--text-2)" }}>No page contains “{query}”.</span>
           ) : (
             <>
-              <span style={{ color: "var(--color-muted)" }}>
+              <span style={{ color: "var(--text-2)" }}>
                 {hits.length} page{hits.length === 1 ? "" : "s"} match — keyword search over the extracted text:
               </span>
               <ul className="mt-1 max-h-28 space-y-0.5 overflow-y-auto">
@@ -193,7 +205,7 @@ export function PdfView({
                   <li key={hit.pageNumber}>
                     <button className="text-left hover:underline" onClick={() => onPageChange(hit.pageNumber)}>
                       <span className="font-medium">p.{hit.pageNumber}</span>{" "}
-                      <span style={{ color: "var(--color-muted)" }}>…{hit.snippet}…</span>
+                      <span style={{ color: "var(--text-2)" }}>…{hit.snippet}…</span>
                     </button>
                   </li>
                 ))}
@@ -203,9 +215,9 @@ export function PdfView({
         </div>
       ) : null}
 
-      <div ref={containerRef} className="flex-1 overflow-auto p-2" style={{ background: "var(--color-sunken)" }}>
+      <div ref={containerRef} className="flex-1 overflow-auto p-2" style={{ background: "var(--surface-2)" }}>
         {error ? (
-          <p className="p-4 text-[13px]" style={{ color: "var(--color-alarm)" }} role="alert">
+          <p className="p-4 text-[13px]" style={{ color: "var(--danger)" }} role="alert">
             {error}
           </p>
         ) : (
@@ -224,7 +236,7 @@ export function PdfView({
               />
             ))}
             {loading ? (
-              <p className="absolute inset-0 flex items-center justify-center text-[13px]" style={{ color: "var(--color-muted)" }}>
+              <p className="absolute inset-0 flex items-center justify-center text-[13px]" style={{ color: "var(--text-2)" }}>
                 Rendering page…
               </p>
             ) : null}

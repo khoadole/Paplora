@@ -25,9 +25,9 @@ export function LibraryView() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <header className="border-b px-4 py-3" style={{ borderColor: "var(--color-line)" }}>
+      <header className="border-b px-4 py-3" style={{ borderColor: "var(--border)" }}>
         <h1 className="text-[15px] font-semibold">Library</h1>
-        <p className="mt-0.5 text-[12.5px]" style={{ color: "var(--color-muted)" }}>
+        <p className="mt-0.5 text-[12.5px]" style={{ color: "var(--text-2)" }}>
           Every PDF stored in this browser. A paper can sit in several projects without being uploaded twice.
         </p>
         <input
@@ -41,11 +41,11 @@ export function LibraryView() {
 
       <div className="min-h-0 flex-1 overflow-auto p-4">
         {!ws.library.length ? (
-          <p className="text-[13px]" style={{ color: "var(--color-muted)" }}>
+          <p className="text-[13px]" style={{ color: "var(--text-2)" }}>
             No documents yet. Add PDFs from inside a project and they will appear here.
           </p>
         ) : !results.length ? (
-          <p className="text-[13px]" style={{ color: "var(--color-muted)" }}>
+          <p className="text-[13px]" style={{ color: "var(--text-2)" }}>
             Nothing matches “{query}”.
           </p>
         ) : (
@@ -75,14 +75,14 @@ export function LibraryView() {
                           >
                             Save
                           </button>
-                          <button className="btn btn-ghost" onClick={() => setRenaming(null)}>
+                          <button className="btn btn-quiet" onClick={() => setRenaming(null)}>
                             Cancel
                           </button>
                         </div>
                       ) : (
                         <p className="truncate text-[13.5px] font-medium">{source.title}</p>
                       )}
-                      <p className="mt-0.5 truncate text-[11.5px]" style={{ color: "var(--color-faint)" }}>
+                      <p className="mt-0.5 truncate text-[11.5px]" style={{ color: "var(--text-3)" }}>
                         {source.filename} · {(source.byteSize / 1024).toFixed(0)} KB · hash {source.contentHash.slice(0, 10)}…
                       </p>
                       <p className="mt-1 flex flex-wrap gap-1 text-[11.5px]">
@@ -90,7 +90,7 @@ export function LibraryView() {
                           projects.map((project) => (
                             <button
                               key={project.id}
-                              className="chip"
+                              className="badge"
                               onClick={() => ws.selectProject(project.id)}
                               title="Open this project"
                             >
@@ -98,7 +98,7 @@ export function LibraryView() {
                             </button>
                           ))
                         ) : (
-                          <span className="chip">in no project</span>
+                          <span className="badge">in no project</span>
                         )}
                       </p>
                     </div>
@@ -110,7 +110,7 @@ export function LibraryView() {
                         </button>
                       ) : null}
                       <button
-                        className="btn btn-ghost"
+                        className="btn btn-quiet"
                         onClick={() => {
                           setRenaming(source.id);
                           setTitle(source.title);
@@ -118,12 +118,12 @@ export function LibraryView() {
                       >
                         Rename
                       </button>
-                      <button className="btn btn-ghost" onClick={() => ws.retryParse(source.id)} title="Read the PDF again">
+                      <button className="btn btn-quiet" onClick={() => ws.retryParse(source.id)} title="Read the PDF again">
                         Re-read
                       </button>
                       <button
-                        className="btn btn-ghost"
-                        style={{ color: "var(--color-alarm)" }}
+                        className="btn btn-quiet"
+                        style={{ color: "var(--danger)" }}
                         onClick={() => setConfirmDelete(source.id)}
                       >
                         Delete
@@ -134,7 +134,7 @@ export function LibraryView() {
                   {confirmDelete === source.id ? (
                     <div
                       className="mt-2 rounded-md border p-2 text-[12.5px]"
-                      style={{ borderColor: "var(--color-alarm)", background: "var(--color-alarm-soft)" }}
+                      style={{ borderColor: "var(--danger)", background: "var(--danger-weak)" }}
                     >
                       <p>
                         Delete this document everywhere? It is used by {projects.length} project
@@ -150,7 +150,7 @@ export function LibraryView() {
                         >
                           Delete everywhere
                         </button>
-                        <button className="btn btn-ghost" onClick={() => setConfirmDelete(null)}>
+                        <button className="btn btn-quiet" onClick={() => setConfirmDelete(null)}>
                           Cancel
                         </button>
                       </div>

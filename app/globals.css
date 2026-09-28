@@ -3,51 +3,113 @@
 @tailwind utilities;
 
 /*
- * Paplora's surface: paper white, ink, one muted teal accent. Restrained on
- * purpose — the table and the document are the interface; nothing else should
- * compete with them for attention.
+ * Design tokens.
+ *
+ * One scale for colour, spacing, radius and type, defined once here and used
+ * everywhere. Light is the default reading theme; dark is a variable swap, not a
+ * second set of rules, and a stored preference wins over the system setting via
+ * data-theme on <html>.
  */
 
 :root {
-  --color-paper: #f7f7f4;
-  --color-surface: #ffffff;
-  --color-sunken: #f1f1ed;
-  --color-ink: #1b1c1a;
-  --color-muted: #6a6c66;
-  --color-faint: #93958e;
-  --color-line: #e2e2dc;
-  --color-line-strong: #cfcfc7;
-  --color-accent: #2c6357;
-  --color-accent-soft: #e7efec;
-  --color-warn: #8a5a12;
-  --color-warn-soft: #f7efdf;
-  --color-alarm: #8c3a2e;
-  --color-alarm-soft: #f8e9e6;
+  /* Surfaces: app background is a hair off-white, content sits on white. */
+  --app: #f6f7f6;
+  --surface: #ffffff;
+  --surface-2: #f2f3f2;
+  --surface-3: #e9ebe9;
+
+  /* Text: charcoal primary, slate secondary — both meet AA on white. */
+  --text: #1f2421;
+  --text-2: #5b635e;
+  --text-3: #858d88;
+
+  --border: #e3e6e3;
+  --border-2: #cfd4d0;
+
+  /* One accent, used for selection and primary actions only. */
+  --accent: #14706250;
+  --accent: #157061;
+  --accent-hover: #10574b;
+  --accent-weak: #e8f1ef;
+  --accent-border: #a9cec5;
+
+  --warn: #8a5a12;
+  --warn-weak: #fbf1e0;
+  --danger: #a33a2a;
+  --danger-weak: #fbeae7;
+  --ok: #2f6b43;
+  --ok-weak: #e8f2ea;
+
+  --shadow-sm: 0 1px 2px rgb(17 24 20 / 0.06);
+  --shadow-md: 0 2px 8px rgb(17 24 20 / 0.08), 0 1px 2px rgb(17 24 20 / 0.04);
+  --shadow-lg: 0 12px 32px rgb(17 24 20 / 0.14);
+
+  --radius-sm: 6px;
+  --radius: 8px;
+  --radius-lg: 10px;
+
+  --row-height: 44px;
+  --cell-pad-y: 8px;
   --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+/* Compact density: only the table breathes less. */
+:root[data-density="compact"] {
+  --row-height: 34px;
+  --cell-pad-y: 4px;
 }
 
 @media (prefers-color-scheme: dark) {
-  /*
-   * A single dark mapping. The table stays high-contrast because reading small
-   * numbers side by side is the whole job.
-   */
   :root:not([data-theme="light"]) {
-    --color-paper: #16171a;
-    --color-surface: #1d1f22;
-    --color-sunken: #242629;
-    --color-ink: #ecece8;
-    --color-muted: #a3a59d;
-    --color-faint: #7d7f78;
-    --color-line: #32353a;
-    --color-line-strong: #454950;
-    --color-accent: #7fb8a8;
-    --color-accent-soft: #23342f;
-    --color-warn: #d9ab62;
-    --color-warn-soft: #33291a;
-    --color-alarm: #e09080;
-    --color-alarm-soft: #34221f;
+    --app: #14171a;
+    --surface: #1b1f22;
+    --surface-2: #22272a;
+    --surface-3: #2b3135;
+    --text: #e9ecea;
+    --text-2: #a4aca7;
+    --text-3: #7e8783;
+    --border: #2e3439;
+    --border-2: #424a4f;
+    --accent: #6fb6a6;
+    --accent-hover: #86c6b7;
+    --accent-weak: #1d312d;
+    --accent-border: #37564f;
+    --warn: #d7a95f;
+    --warn-weak: #322818;
+    --danger: #e08e7e;
+    --danger-weak: #33211e;
+    --ok: #86bd98;
+    --ok-weak: #1e2d23;
+    --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
+    --shadow-md: 0 2px 8px rgb(0 0 0 / 0.45);
+    --shadow-lg: 0 12px 32px rgb(0 0 0 / 0.55);
   }
+}
+
+:root[data-theme="dark"] {
+  --app: #14171a;
+  --surface: #1b1f22;
+  --surface-2: #22272a;
+  --surface-3: #2b3135;
+  --text: #e9ecea;
+  --text-2: #a4aca7;
+  --text-3: #7e8783;
+  --border: #2e3439;
+  --border-2: #424a4f;
+  --accent: #6fb6a6;
+  --accent-hover: #86c6b7;
+  --accent-weak: #1d312d;
+  --accent-border: #37564f;
+  --warn: #d7a95f;
+  --warn-weak: #322818;
+  --danger: #e08e7e;
+  --danger-weak: #33211e;
+  --ok: #86bd98;
+  --ok-weak: #1e2d23;
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
+  --shadow-md: 0 2px 8px rgb(0 0 0 / 0.45);
+  --shadow-lg: 0 12px 32px rgb(0 0 0 / 0.55);
 }
 
 html,
@@ -56,82 +118,136 @@ body {
 }
 
 body {
-  background: var(--color-paper);
-  color: var(--color-ink);
+  background: var(--app);
+  color: var(--text);
   font-family: var(--font-sans);
+  font-size: 14px;
   -webkit-font-smoothing: antialiased;
 }
 
-/* One visible focus treatment everywhere, including inside the table. */
 :where(a, button, input, textarea, select, [tabindex]):focus-visible {
-  outline: 2px solid var(--color-accent);
-  outline-offset: 2px;
-  border-radius: 3px;
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-radius: var(--radius-sm);
 }
 
 @layer components {
+  /* -- buttons: three weights, one shape ------------------------------- */
   .btn {
-    @apply inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-[13px] font-medium transition-colors;
-    border-color: var(--color-line-strong);
-    background: var(--color-surface);
-    color: var(--color-ink);
+    @apply inline-flex items-center justify-center gap-1.5 whitespace-nowrap text-[13px] font-medium;
+    height: 32px;
+    padding: 0 10px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-2);
+    background: var(--surface);
+    color: var(--text);
+    transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
   }
   .btn:hover:not(:disabled) {
-    background: var(--color-sunken);
+    background: var(--surface-2);
   }
   .btn:disabled {
-    opacity: 0.5;
+    opacity: 0.55;
     cursor: not-allowed;
   }
   .btn-primary {
-    background: var(--color-accent);
-    border-color: var(--color-accent);
+    background: var(--accent);
+    border-color: var(--accent);
     color: #fff;
   }
   .btn-primary:hover:not(:disabled) {
-    filter: brightness(1.08);
-    background: var(--color-accent);
+    background: var(--accent-hover);
+    border-color: var(--accent-hover);
   }
-  .btn-ghost {
+  .btn-quiet {
     border-color: transparent;
     background: transparent;
-    color: var(--color-muted);
+    color: var(--text-2);
   }
-  .btn-ghost:hover:not(:disabled) {
-    background: var(--color-sunken);
-    color: var(--color-ink);
+  .btn-quiet:hover:not(:disabled) {
+    background: var(--surface-2);
+    color: var(--text);
   }
+  .btn-icon {
+    width: 32px;
+    padding: 0;
+  }
+  .btn-sm {
+    height: 26px;
+    padding: 0 8px;
+    font-size: 12.5px;
+  }
+
+  /* -- inputs ---------------------------------------------------------- */
   .field {
-    @apply w-full rounded-md border px-2.5 py-1.5 text-[13px];
-    border-color: var(--color-line-strong);
-    background: var(--color-surface);
-    color: var(--color-ink);
+    @apply w-full text-[13px];
+    min-height: 32px;
+    padding: 6px 9px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-2);
+    background: var(--surface);
+    color: var(--text);
   }
   .field::placeholder {
-    color: var(--color-faint);
+    color: var(--text-3);
   }
+  textarea.field {
+    line-height: 1.45;
+  }
+
   .card {
-    @apply rounded-lg border;
-    border-color: var(--color-line);
-    background: var(--color-surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
   }
-  .chip {
-    @apply inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[11px] font-medium;
-    border-color: var(--color-line);
-    background: var(--color-sunken);
-    color: var(--color-muted);
+
+  .badge {
+    @apply inline-flex items-center gap-1 whitespace-nowrap text-[11.5px] font-medium;
+    padding: 1px 6px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--surface-2);
+    color: var(--text-2);
   }
+
   .label-text {
     @apply block text-[12px] font-medium;
-    color: var(--color-muted);
+    color: var(--text-2);
+    margin-bottom: 4px;
+  }
+
+  .menu {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+    box-shadow: var(--shadow-lg);
+    padding: 4px;
+    min-width: 200px;
+  }
+  .menu-item {
+    @apply flex w-full items-center gap-2 text-left text-[13px];
+    padding: 6px 8px;
+    border-radius: var(--radius-sm);
+    color: var(--text);
+  }
+  .menu-item:hover:not(:disabled) {
+    background: var(--surface-2);
+  }
+  .menu-item:disabled {
+    opacity: 0.5;
+  }
+  .menu-sep {
+    height: 1px;
+    margin: 4px 0;
+    background: var(--border);
   }
 }
 
 /* The evidence highlight sits above the rendered page, never inside it. */
 .evidence-box {
   position: absolute;
-  background: color-mix(in srgb, var(--color-accent) 26%, transparent);
-  border-bottom: 2px solid var(--color-accent);
+  background: color-mix(in srgb, var(--accent) 24%, transparent);
+  border-bottom: 2px solid var(--accent);
   pointer-events: none;
   mix-blend-mode: multiply;
 }
@@ -140,4 +256,48 @@ body {
   :root:not([data-theme="light"]) .evidence-box {
     mix-blend-mode: screen;
   }
+}
+:root[data-theme="dark"] .evidence-box {
+  mix-blend-mode: screen;
+}
+
+/* Column resize handle: invisible until reached for. */
+.resize-handle {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  width: 7px;
+  height: 100%;
+  cursor: col-resize;
+  touch-action: none;
+}
+.resize-handle::after {
+  content: "";
+  position: absolute;
+  inset-block: 6px;
+  left: 3px;
+  width: 1px;
+  background: transparent;
+  transition: background-color 120ms ease;
+}
+.resize-handle:hover::after,
+.resize-handle:focus-visible::after,
+.resize-handle[data-active="true"]::after {
+  background: var(--accent);
+}
+
+/* Thin, unobtrusive scrollbars in the table and document panes. */
+.scroll-area {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-2) transparent;
+}
+.scroll-area::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+.scroll-area::-webkit-scrollbar-thumb {
+  background: var(--border-2);
+  border-radius: 999px;
+  border: 3px solid transparent;
+  background-clip: content-box;
 }

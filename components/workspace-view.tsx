@@ -1,14 +1,44 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { bulkTargets, useWorkspace } from "@/lib/workspace";
 import { ComparisonTable } from "./comparison-table";
 import { EvidencePanel } from "./evidence-panel";
 import { LibraryView } from "./library-view";
 import { AddColumnDialog, AddPapersDialog, NewProjectDialog, SettingsDialog } from "./dialogs";
+import { Menu, MenuItem, MenuSeparator } from "./ui/menu";
+import {
+  IconAlert,
+  IconClose,
+  IconColumns,
+  IconDownload,
+  IconEdit,
+  IconLibrary,
+  IconMenu,
+  IconMore,
+  IconPlus,
+  IconSearch,
+  IconSettings,
+  IconSidebar,
+  IconSparkle,
+  IconTrash,
+  IconUpload,
+} from "./icons";
 import { comparisonCsv, downloadCsv, evidenceCsv, evidenceJson, download } from "@/lib/export/run";
 
+/**
+ * The workspace shell: navigation, main column, evidence panel.
+ *
+ * Two rules drive the layout. Every flex ancestor of the table carries min-w-0,
+ * so the table's horizontal scroll belongs to the table and never to the page.
+ * And the evidence panel is only mounted when it is open, so a closed panel
+ * gives all of its width back instead of reserving an empty third of the screen.
+ */
+
 type View = "project" | "library";
+
+const PANEL_MIN = 360;
+const PANEL_MAX = 760;
 
 export function WorkspaceView() {
   const ws = useWorkspace();
@@ -19,213 +49,122 @@ export function WorkspaceView() {
   const [settings, setSettings] = useState(false);
   const [navOpen, setNavOpen] = useState(false);
   const [evidenceOpen, setEvidenceOpen] = useState(false);
-  const [panelWidth, setPanelWidth] = useState(420);
+  const [documentExpanded, setDocumentExpanded] = useState(false);
 
-  // On narrow screens the evidence panel is a sheet, opened by selecting a cell.
+  const collapsed = ws.prefs.sidebarCollapsed ?? false;
+  const panelWidth = Math.min(PANEL_MAX, Math.max(PANEL_MIN, ws.prefs.evidencePanelWidth ?? 440));
+
+  // Selecting a cell opens the panel; the user can close it and keep the selection.
   useEffect(() => {
     if (ws.selected) setEvidenceOpen(true);
   }, [ws.selected]);
 
+  // A stored theme wins over the system setting; "system" removes the attribute.
+  useEffect(() => {
+    const root = document.documentElement;
+    const theme = ws.prefs.theme ?? "system";
+    if (theme === "system") root.removeAttribute("data-theme");
+    else root.setAttribute("data-theme", theme);
+    root.setAttribute("data-density", ws.prefs.density ?? "comfortable");
+  }, [ws.prefs.theme, ws.prefs.density]);
+
   if (!ws.ready) {
     return (
       <div className="flex h-dvh items-center justify-center">
-        <p className="text-[13px]" style={{ color: "var(--color-muted)" }} role="status">
+        <p className="text-[13px]" style={{ color: "var(--text-2)" }} role="status">
           Opening your workspace…
         </p>
       </div>
     );
   }
 
+  const showPanel = evidenceOpen && Boolean(ws.selected) && view === "project";
+
   return (
     <div className="flex h-dvh overflow-hidden">
-      {/* Sidebar */}
-      <nav
-        className={`${navOpen ? "fixed inset-y-0 left-0 z-30 w-64 shadow-xl" : "hidden"} flex shrink-0 flex-col border-r lg:static lg:flex lg:w-60`}
-        style={{ borderColor: "var(--color-line)", background: "var(--color-surface)" }}
-        aria-label="Projects"
-      >
-        <div className="flex items-center justify-between px-3 py-3">
-          <span className="text-[15px] font-semibold tracking-tight">
-            Paplora
-          </span>
-          <button className="btn btn-ghost px-2 py-1 lg:hidden" onClick={() => setNavOpen(false)} aria-label="Close navigation">
-            ✕
-          </button>
-        </div>
+      <Sidebar
+        collapsed={collapsed}
+        mobileOpen={navOpen}
+        view={view}
+        onView={(next) => {
+          setView(next);
+          setNavOpen(false);
+        }}
+        onNewProject={() => setNewProject(true)}
+        onSettings={() => setSettings(true)}
+        onCloseMobile={() => setNavOpen(false)}
+      />
 
-        <div className="px-3">
-          <button className="btn btn-primary w-full justify-center" onClick={() => setNewProject(true)}>
-            New project
-          </button>
-        </div>
-
-        <div className="mt-3 min-h-0 flex-1 overflow-y-auto px-2">
-          <p className="px-1 pb-1 text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--color-faint)" }}>
-            Projects
-          </p>
-          {ws.projects.length === 0 ? (
-            <p className="px-1 text-[12.5px]" style={{ color: "var(--color-muted)" }}>
-              None yet.
-            </p>
-          ) : (
-            <ul className="space-y-0.5">
-              {ws.projects.map((project) => {
-                const active = view === "project" && ws.project?.id === project.id;
-                return (
-                  <li key={project.id}>
-                    <button
-                      className="w-full rounded-md px-2 py-1.5 text-left text-[13px]"
-                      style={{
-                        background: active ? "var(--color-accent-soft)" : "transparent",
-                        color: active ? "var(--color-accent)" : "var(--color-ink)",
-                        fontWeight: active ? 600 : 400,
-                      }}
-                      onClick={() => {
-                        ws.selectProject(project.id);
-                        setView("project");
-                        setNavOpen(false);
-                      }}
-                    >
-                      <span className="block truncate">{project.title}</span>
-                      {project.kind === "sample" ? (
-                        <span className="text-[11px]" style={{ color: "var(--color-faint)" }}>
-                          sample · fictional documents
-                        </span>
-                      ) : null}
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </div>
-
-        <div className="border-t px-2 py-2" style={{ borderColor: "var(--color-line)" }}>
-          <button
-            className="w-full rounded-md px-2 py-1.5 text-left text-[13px]"
-            style={{
-              background: view === "library" ? "var(--color-accent-soft)" : "transparent",
-              color: view === "library" ? "var(--color-accent)" : "var(--color-ink)",
-            }}
-            onClick={() => {
-              setView("library");
-              setNavOpen(false);
-            }}
-          >
-            Library
-            <span className="ml-1 text-[11px]" style={{ color: "var(--color-faint)" }}>
-              {ws.library.length}
-            </span>
-          </button>
-          <button
-            className="w-full rounded-md px-2 py-1.5 text-left text-[13px]"
-            onClick={() => setSettings(true)}
-          >
-            Settings
-          </button>
-          <p className="px-2 pt-1 text-[11px]" style={{ color: "var(--color-faint)" }}>
-            {ws.aiStatus?.configured ? `AI: ${ws.aiStatus.model}` : "AI extraction off"}
-          </p>
-        </div>
-      </nav>
-
-      {/* Main */}
       <main className="flex min-w-0 flex-1 flex-col">
         {ws.storageError ? (
-          <p
-            className="border-b px-4 py-2 text-[12.5px]"
+          <div
+            className="flex items-start gap-2 border-b px-4 py-2 text-[12.5px]"
             role="alert"
-            style={{ borderColor: "var(--color-alarm)", background: "var(--color-alarm-soft)", color: "var(--color-alarm)" }}
+            style={{ borderColor: "var(--border)", background: "var(--danger-weak)", color: "var(--danger)" }}
           >
-            {ws.storageError}
-          </p>
+            <IconAlert size={15} />
+            <span>{ws.storageError}</span>
+          </div>
         ) : null}
 
         {view === "library" ? (
           <LibraryView />
         ) : !ws.project ? (
-          <EmptyWorkspace onCreate={() => setNewProject(true)} />
+          <EmptyWorkspace onCreate={() => setNewProject(true)} onOpenNav={() => setNavOpen(true)} />
         ) : (
           <>
             <ProjectHeader
               onAddPapers={() => setAddPapers(true)}
               onAddColumn={() => setAddColumn(true)}
               onToggleNav={() => setNavOpen(true)}
-              onExportComparison={() => {
-                if (!ws.project) return;
-                downloadCsv(
-                  `${slug(ws.project.title)}-comparison.csv`,
-                  comparisonCsv({ project: ws.project, rows: ws.rows, columns: ws.columns, cells: ws.cells, sources: ws.sources }),
-                );
-              }}
-              onExportEvidenceCsv={() => {
-                if (!ws.project) return;
-                downloadCsv(
-                  `${slug(ws.project.title)}-evidence.csv`,
-                  evidenceCsv({ project: ws.project, rows: ws.rows, columns: ws.columns, cells: ws.cells, sources: ws.sources }),
-                );
-              }}
-              onExportEvidenceJson={() => {
-                if (!ws.project) return;
-                download(
-                  `${slug(ws.project.title)}-evidence.json`,
-                  new Blob(
-                    [evidenceJson({ project: ws.project, rows: ws.rows, columns: ws.columns, cells: ws.cells, sources: ws.sources })],
-                    { type: "application/json" },
-                  ),
-                );
-              }}
+              onSettings={() => setSettings(true)}
             />
-            <div className="flex min-h-0 flex-1">
-              <div className="flex min-w-0 flex-1 flex-col border-r" style={{ borderColor: "var(--color-line)" }}>
-                <ComparisonTable />
+            <div className="flex min-h-0 min-w-0 flex-1">
+              <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+                <ComparisonTable onOpenEvidence={() => setEvidenceOpen(true)} evidenceOpen={showPanel} />
               </div>
 
-              {/* Evidence: docked on desktop, a sheet on narrow screens. */}
-              <div
-                className="hidden shrink-0 lg:block"
-                style={{ width: panelWidth, background: "var(--color-surface)" }}
-              >
-                <div className="flex h-full">
-                  <div
-                    role="separator"
-                    aria-label="Resize evidence panel"
-                    aria-orientation="vertical"
-                    tabIndex={0}
-                    className="w-1 cursor-col-resize"
-                    style={{ background: "var(--color-line)" }}
-                    onKeyDown={(e) => {
-                      if (e.key === "ArrowLeft") setPanelWidth((w) => Math.min(720, w + 24));
-                      if (e.key === "ArrowRight") setPanelWidth((w) => Math.max(320, w - 24));
-                    }}
-                    onPointerDown={(e) => {
-                      const startX = e.clientX;
-                      const startWidth = panelWidth;
-                      const move = (event: PointerEvent) =>
-                        setPanelWidth(Math.max(320, Math.min(720, startWidth - (event.clientX - startX))));
-                      const up = () => {
-                        window.removeEventListener("pointermove", move);
-                        window.removeEventListener("pointerup", up);
-                      };
-                      window.addEventListener("pointermove", move);
-                      window.addEventListener("pointerup", up);
-                    }}
+              {showPanel ? (
+                <>
+                  <ResizeHandle
+                    width={panelWidth}
+                    onChange={(next) => ws.setPrefs({ evidencePanelWidth: next })}
                   />
-                  <div className="min-w-0 flex-1">
-                    <EvidencePanel />
-                  </div>
-                </div>
-              </div>
+                  <aside
+                    className="hidden shrink-0 border-l lg:block"
+                    style={{ width: panelWidth, borderColor: "var(--border)", background: "var(--surface)" }}
+                  >
+                    <EvidencePanel
+                      onClose={() => setEvidenceOpen(false)}
+                      onExpandDocument={() => setDocumentExpanded(true)}
+                    />
+                  </aside>
+                </>
+              ) : null}
 
-              {evidenceOpen && ws.selected ? (
-                <div className="fixed inset-0 z-40 lg:hidden" style={{ background: "var(--color-surface)" }}>
-                  <EvidencePanel onClose={() => setEvidenceOpen(false)} />
+              {/* Below lg the panel is a full-screen sheet rather than a third column. */}
+              {showPanel ? (
+                <div className="fixed inset-0 z-40 lg:hidden" style={{ background: "var(--surface)" }}>
+                  <EvidencePanel
+                    onClose={() => setEvidenceOpen(false)}
+                    onExpandDocument={() => setDocumentExpanded(true)}
+                  />
                 </div>
               ) : null}
             </div>
           </>
         )}
       </main>
+
+      {documentExpanded && ws.selected ? (
+        <div className="fixed inset-0 z-50 flex flex-col" style={{ background: "var(--surface)" }}>
+          <EvidencePanel
+            expanded
+            onClose={() => setDocumentExpanded(false)}
+            onExpandDocument={() => setDocumentExpanded(false)}
+          />
+        </div>
+      ) : null}
 
       <NewProjectDialog open={newProject} onOpenChange={setNewProject} />
       <AddPapersDialog open={addPapers} onOpenChange={setAddPapers} />
@@ -235,200 +174,482 @@ export function WorkspaceView() {
   );
 }
 
-function slug(text: string) {
-  return text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") || "project";
+/** Drag or arrow-key the boundary between table and evidence. */
+function ResizeHandle({ width, onChange }: { width: number; onChange: (next: number) => void }) {
+  const [active, setActive] = useState(false);
+  return (
+    <div
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Resize evidence panel"
+      aria-valuenow={width}
+      aria-valuemin={PANEL_MIN}
+      aria-valuemax={PANEL_MAX}
+      tabIndex={0}
+      data-active={active}
+      className="hidden w-1 cursor-col-resize lg:block"
+      style={{ background: active ? "var(--accent)" : "var(--border)" }}
+      onKeyDown={(e) => {
+        if (e.key === "ArrowLeft") onChange(Math.min(PANEL_MAX, width + 24));
+        if (e.key === "ArrowRight") onChange(Math.max(PANEL_MIN, width - 24));
+      }}
+      onPointerDown={(e) => {
+        e.preventDefault();
+        setActive(true);
+        const startX = e.clientX;
+        const startWidth = width;
+        const move = (event: PointerEvent) =>
+          onChange(Math.max(PANEL_MIN, Math.min(PANEL_MAX, startWidth - (event.clientX - startX))));
+        const up = () => {
+          setActive(false);
+          window.removeEventListener("pointermove", move);
+          window.removeEventListener("pointerup", up);
+        };
+        window.addEventListener("pointermove", move);
+        window.addEventListener("pointerup", up);
+      }}
+    />
+  );
+}
+
+function Sidebar({
+  collapsed,
+  mobileOpen,
+  view,
+  onView,
+  onNewProject,
+  onSettings,
+  onCloseMobile,
+}: {
+  collapsed: boolean;
+  mobileOpen: boolean;
+  view: View;
+  onView: (view: View) => void;
+  onNewProject: () => void;
+  onSettings: () => void;
+  onCloseMobile: () => void;
+}) {
+  const ws = useWorkspace();
+  const [query, setQuery] = useState("");
+  const searchable = ws.projects.length > 7;
+  const projects = query.trim()
+    ? ws.projects.filter((p) => p.title.toLowerCase().includes(query.trim().toLowerCase()))
+    : ws.projects;
+
+  return (
+    <nav
+      className={`${mobileOpen ? "fixed inset-y-0 left-0 z-40 w-[240px] shadow-lg" : "hidden"} flex shrink-0 flex-col border-r lg:static lg:flex`}
+      style={{
+        width: mobileOpen ? 240 : collapsed ? 56 : 232,
+        borderColor: "var(--border)",
+        background: "var(--surface)",
+      }}
+      aria-label="Workspace navigation"
+    >
+      <div className="flex h-12 items-center gap-1 px-2">
+        {!collapsed || mobileOpen ? (
+          <span className="flex-1 truncate px-1 text-[14.5px] font-semibold tracking-[-0.01em]">Paplora</span>
+        ) : null}
+        <button
+          className="btn btn-quiet btn-icon hidden lg:inline-flex"
+          onClick={() => ws.setPrefs({ sidebarCollapsed: !collapsed })}
+          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+        >
+          <IconSidebar />
+        </button>
+        <button className="btn btn-quiet btn-icon lg:hidden" onClick={onCloseMobile} aria-label="Close navigation">
+          <IconClose />
+        </button>
+      </div>
+
+      <div className="px-2 pb-2">
+        <button
+          className={`btn w-full ${collapsed && !mobileOpen ? "btn-icon" : ""}`}
+          onClick={onNewProject}
+          aria-label="New project"
+          title="New project"
+        >
+          <IconPlus />
+          {!collapsed || mobileOpen ? <span>New project</span> : null}
+        </button>
+      </div>
+
+      {searchable && (!collapsed || mobileOpen) ? (
+        <div className="relative px-2 pb-2">
+          <IconSearch size={14} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2" style={{ color: "var(--text-3)" }} />
+          <input
+            className="field pl-7"
+            placeholder="Find project…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            aria-label="Find project"
+          />
+        </div>
+      ) : null}
+
+      <div className="scroll-area min-h-0 flex-1 overflow-y-auto px-2">
+        {!collapsed || mobileOpen ? (
+          <p className="px-2 pb-1 pt-1 text-[11px] font-semibold uppercase tracking-wide" style={{ color: "var(--text-3)" }}>
+            Projects
+          </p>
+        ) : null}
+        {projects.length === 0 ? (
+          !collapsed || mobileOpen ? (
+            <p className="px-2 text-[12.5px]" style={{ color: "var(--text-3)" }}>
+              {ws.projects.length ? "No match." : "No projects yet."}
+            </p>
+          ) : null
+        ) : (
+          <ul className="space-y-px">
+            {projects.map((project) => {
+              const active = view === "project" && ws.project?.id === project.id;
+              return (
+                <li key={project.id}>
+                  <button
+                    className="relative flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px]"
+                    style={{
+                      background: active ? "var(--accent-weak)" : "transparent",
+                      color: active ? "var(--accent)" : "var(--text)",
+                      fontWeight: active ? 600 : 400,
+                    }}
+                    onClick={() => {
+                      ws.selectProject(project.id);
+                      onView("project");
+                    }}
+                    title={project.title}
+                  >
+                    {active ? (
+                      <span
+                        aria-hidden
+                        className="absolute inset-y-1 left-0 w-[2.5px] rounded-full"
+                        style={{ background: "var(--accent)" }}
+                      />
+                    ) : null}
+                    {collapsed && !mobileOpen ? (
+                      <span className="mx-auto text-[12px] font-semibold uppercase">{project.title.slice(0, 2)}</span>
+                    ) : (
+                      <span className="min-w-0 flex-1 truncate">{project.title}</span>
+                    )}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+
+      <div className="border-t p-2" style={{ borderColor: "var(--border)" }}>
+        <button
+          className={`menu-item ${collapsed && !mobileOpen ? "justify-center" : ""}`}
+          style={{
+            background: view === "library" ? "var(--accent-weak)" : "transparent",
+            color: view === "library" ? "var(--accent)" : "var(--text)",
+          }}
+          onClick={() => onView("library")}
+          title="Library"
+        >
+          <IconLibrary />
+          {!collapsed || mobileOpen ? (
+            <>
+              <span className="flex-1">Library</span>
+              <span className="text-[11.5px]" style={{ color: "var(--text-3)" }}>
+                {ws.library.length}
+              </span>
+            </>
+          ) : null}
+        </button>
+        <button
+          className={`menu-item ${collapsed && !mobileOpen ? "justify-center" : ""}`}
+          onClick={onSettings}
+          title="Settings"
+        >
+          <IconSettings />
+          {!collapsed || mobileOpen ? <span>Settings</span> : null}
+        </button>
+      </div>
+    </nav>
+  );
 }
 
 function ProjectHeader({
   onAddPapers,
   onAddColumn,
   onToggleNav,
-  onExportComparison,
-  onExportEvidenceCsv,
-  onExportEvidenceJson,
+  onSettings,
 }: {
   onAddPapers: () => void;
   onAddColumn: () => void;
   onToggleNav: () => void;
-  onExportComparison: () => void;
-  onExportEvidenceCsv: () => void;
-  onExportEvidenceJson: () => void;
+  onSettings: () => void;
 }) {
   const ws = useWorkspace();
   const [editing, setEditing] = useState(false);
   const [title, setTitle] = useState(ws.project?.title ?? "");
   const [question, setQuestion] = useState(ws.project?.question ?? "");
+  const [questionOpen, setQuestionOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [exportOpen, setExportOpen] = useState(false);
 
   useEffect(() => {
     setTitle(ws.project?.title ?? "");
     setQuestion(ws.project?.question ?? "");
     setEditing(false);
     setConfirmDelete(false);
+    setQuestionOpen(false);
   }, [ws.project?.id, ws.project?.title, ws.project?.question]);
 
   if (!ws.project) return null;
   const project = ws.project;
   const running = ws.job?.stage === "extracting" || ws.job?.stage === "queued";
-  // Cells the user has already answered are left alone; the tooltip says so.
-  const allTargets = bulkTargets(ws.cells, ws.rows, ws.columns);
+  const pending = bulkTargets(ws.cells, ws.rows, ws.columns);
+  const hasPapers = ws.rows.length > 0;
+  const aiReady = Boolean(ws.aiStatus?.configured);
+  const longQuestion = project.question.length > 120;
+
+  const exportInput = { project, rows: ws.rows, columns: ws.columns, cells: ws.cells, sources: ws.sources };
+  const slug = project.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") || "project";
 
   return (
-    <header className="border-b px-3 py-2.5 sm:px-4" style={{ borderColor: "var(--color-line)" }}>
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div className="flex min-w-0 items-start gap-2">
-          <button className="btn btn-ghost px-2 py-1 lg:hidden" onClick={onToggleNav} aria-label="Open navigation">
-            ☰
-          </button>
-          <div className="min-w-0">
-            {editing ? (
-              <div className="space-y-1.5">
-                <input
-                  className="field max-w-md"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  aria-label="Project title"
-                  autoFocus
-                />
-                <textarea
-                  className="field min-h-[52px] max-w-2xl"
-                  value={question}
-                  onChange={(e) => setQuestion(e.target.value)}
-                  aria-label="Research question"
-                  placeholder="Research question"
-                />
-                <div className="flex gap-2">
-                  <button
-                    className="btn btn-primary"
-                    onClick={async () => {
-                      await ws.renameProject(project.id, { title: title.trim() || project.title, question: question.trim() });
-                      setEditing(false);
-                    }}
-                  >
-                    Save
-                  </button>
-                  <button className="btn" onClick={() => setEditing(false)}>
-                    Cancel
-                  </button>
-                </div>
+    <header className="border-b" style={{ borderColor: "var(--border)", background: "var(--surface)" }}>
+      <div className="flex items-start gap-3 px-3 py-3 sm:px-4">
+        <button className="btn btn-quiet btn-icon lg:hidden" onClick={onToggleNav} aria-label="Open navigation">
+          <IconMenu />
+        </button>
+
+        <div className="min-w-0 flex-1">
+          {editing ? (
+            <div className="max-w-2xl space-y-2">
+              <input
+                className="field text-[16px] font-semibold"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                aria-label="Project title"
+                autoFocus
+              />
+              <textarea
+                className="field min-h-[60px]"
+                value={question}
+                onChange={(e) => setQuestion(e.target.value)}
+                aria-label="Research question"
+                placeholder="What are you trying to find out across these papers?"
+              />
+              <div className="flex gap-2">
+                <button
+                  className="btn btn-primary"
+                  onClick={async () => {
+                    await ws.renameProject(project.id, { title: title.trim() || project.title, question: question.trim() });
+                    setEditing(false);
+                  }}
+                >
+                  Save
+                </button>
+                <button className="btn" onClick={() => setEditing(false)}>
+                  Cancel
+                </button>
               </div>
-            ) : (
-              <button className="min-w-0 text-left" onClick={() => setEditing(true)} title="Edit title and question">
-                <h1 className="truncate text-[15px] font-semibold">
+            </div>
+          ) : (
+            <>
+              <div className="flex flex-wrap items-center gap-2">
+                <h1
+                  className="min-w-0 truncate text-[22px] font-semibold leading-tight tracking-[-0.015em]"
+                  title={project.title}
+                >
                   {project.title}
-                  {project.kind === "sample" ? (
-                    <span className="chip ml-2 align-middle" style={{ color: "var(--color-warn)" }}>
-                      sample · fictional documents
-                    </span>
-                  ) : null}
                 </h1>
-                <p className="line-clamp-2 max-w-2xl text-[12.5px]" style={{ color: "var(--color-muted)" }}>
-                  {project.question || "Add a research question"}
-                </p>
-              </button>
-            )}
-            <p className="mt-1 text-[11.5px]" style={{ color: "var(--color-faint)" }}>
-              {ws.sources.length} paper{ws.sources.length === 1 ? "" : "s"} · {ws.rows.length} row
-              {ws.rows.length === 1 ? "" : "s"} · {ws.columns.length} column{ws.columns.length === 1 ? "" : "s"}
-            </p>
-          </div>
+                {project.kind === "sample" ? (
+                  <span
+                    className="badge"
+                    style={{ background: "var(--warn-weak)", color: "var(--warn)", borderColor: "transparent" }}
+                    title="The three documents in this project are fictional demos written for Paplora. Nothing in them is a real paper or a real result."
+                  >
+                    Sample project
+                  </span>
+                ) : null}
+                <button
+                  className="btn btn-quiet btn-icon btn-sm"
+                  onClick={() => setEditing(true)}
+                  aria-label="Edit title and research question"
+                  title="Edit title and research question"
+                >
+                  <IconEdit size={15} />
+                </button>
+              </div>
+
+              <div className="mt-0.5 flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
+                {project.question ? (
+                  <p
+                    className={`max-w-3xl text-[13px] ${questionOpen ? "" : "line-clamp-1"}`}
+                    style={{ color: "var(--text-2)" }}
+                  >
+                    {project.question}
+                  </p>
+                ) : (
+                  <button className="text-[13px] underline-offset-2 hover:underline" style={{ color: "var(--text-3)" }} onClick={() => setEditing(true)}>
+                    Add a research question
+                  </button>
+                )}
+                {longQuestion ? (
+                  <button
+                    className="text-[12px] font-medium"
+                    style={{ color: "var(--accent)" }}
+                    onClick={() => setQuestionOpen((v) => !v)}
+                  >
+                    {questionOpen ? "Less" : "More"}
+                  </button>
+                ) : null}
+              </div>
+
+              <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px]" style={{ color: "var(--text-3)" }}>
+                <span>
+                  {ws.sources.length} paper{ws.sources.length === 1 ? "" : "s"}
+                </span>
+                <span>
+                  {ws.rows.length} row{ws.rows.length === 1 ? "" : "s"}
+                </span>
+                <span>
+                  {ws.columns.length} column{ws.columns.length === 1 ? "" : "s"}
+                </span>
+                {!aiReady ? (
+                  <button
+                    className="badge"
+                    onClick={onSettings}
+                    title={ws.aiStatus?.reason ?? "Automatic extraction is not configured."}
+                  >
+                    <IconSparkle size={12} />
+                    AI not connected
+                  </button>
+                ) : null}
+              </p>
+            </>
+          )}
         </div>
 
-        <div className="flex flex-wrap items-center gap-1.5">
-          <button className="btn" onClick={onAddPapers}>
-            Add papers
+        <div className="flex shrink-0 items-center gap-1.5">
+          <button className={hasPapers ? "btn" : "btn btn-primary"} onClick={onAddPapers}>
+            <IconUpload size={15} />
+            <span className="hidden sm:inline">Add papers</span>
           </button>
-          <button className="btn" onClick={onAddColumn}>
-            Add column
-          </button>
+
           <button
-            className="btn btn-primary"
-            onClick={() => ws.extract(allTargets)}
-            disabled={!ws.aiStatus?.configured || running || !allTargets.length}
+            className={hasPapers && aiReady ? "btn btn-primary" : "btn"}
+            onClick={() => ws.extract(pending)}
+            disabled={!aiReady || running || !pending.length}
             title={
-              ws.aiStatus?.configured
-                ? `Extract the ${allTargets.length} cell(s) you have not answered yourself`
-                : ws.aiStatus?.reason
+              !aiReady
+                ? (ws.aiStatus?.reason ?? "Automatic extraction is not configured.")
+                : !hasPapers
+                  ? "Add a paper first."
+                  : !pending.length
+                    ? "Every cell already has an answer you wrote or reviewed."
+                    : `Extract ${pending.length} unanswered cell${pending.length === 1 ? "" : "s"}`
             }
           >
-            {running ? "Extracting…" : "Extract"}
+            <IconSparkle size={15} />
+            <span className="hidden sm:inline">{running ? "Extracting…" : "Extract data"}</span>
           </button>
-          <div className="relative">
-            <button className="btn" onClick={() => setExportOpen((v) => !v)} aria-expanded={exportOpen}>
-              Export
-            </button>
-            {exportOpen ? (
-              <div
-                className="card absolute right-0 z-30 mt-1 w-64 p-1 shadow-lg"
-                onMouseLeave={() => setExportOpen(false)}
-              >
-                <button className="btn btn-ghost w-full justify-start" onClick={() => { onExportComparison(); setExportOpen(false); }}>
-                  Comparison table (CSV)
-                </button>
-                <button className="btn btn-ghost w-full justify-start" onClick={() => { onExportEvidenceCsv(); setExportOpen(false); }}>
-                  Evidence, one quote per line (CSV)
-                </button>
-                <button className="btn btn-ghost w-full justify-start" onClick={() => { onExportEvidenceJson(); setExportOpen(false); }}>
-                  Evidence with full context (JSON)
-                </button>
-              </div>
-            ) : null}
-          </div>
-          <button className="btn btn-ghost" style={{ color: "var(--color-alarm)" }} onClick={() => setConfirmDelete(true)}>
-            Delete
+
+          <button className="btn" onClick={onAddColumn}>
+            <IconColumns size={15} />
+            <span className="hidden md:inline">Add column</span>
           </button>
+
+          <Menu
+            label="Export"
+            align="end"
+            trigger={
+              <button className="btn" aria-label="Export">
+                <IconDownload size={15} />
+                <span className="hidden md:inline">Export</span>
+              </button>
+            }
+          >
+            <MenuItem onSelect={() => downloadCsv(`${slug}-comparison.csv`, comparisonCsv(exportInput))}>
+              Comparison table (CSV)
+            </MenuItem>
+            <MenuItem onSelect={() => downloadCsv(`${slug}-evidence.csv`, evidenceCsv(exportInput))}>
+              Evidence, one quote per line (CSV)
+            </MenuItem>
+            <MenuItem
+              onSelect={() =>
+                download(`${slug}-evidence.json`, new Blob([evidenceJson(exportInput)], { type: "application/json" }))
+              }
+            >
+              Evidence with full context (JSON)
+            </MenuItem>
+          </Menu>
+
+          <Menu
+            label="Project actions"
+            align="end"
+            trigger={
+              <button className="btn btn-quiet btn-icon" aria-label="Project actions">
+                <IconMore />
+              </button>
+            }
+          >
+            <MenuItem icon={<IconEdit />} onSelect={() => setEditing(true)}>
+              Rename project
+            </MenuItem>
+            <MenuItem icon={<IconSettings />} onSelect={onSettings}>
+              Settings and backup
+            </MenuItem>
+            <MenuSeparator />
+            <MenuItem icon={<IconTrash />} danger onSelect={() => setConfirmDelete(true)}>
+              Delete project
+            </MenuItem>
+          </Menu>
         </div>
       </div>
 
-      {!ws.aiStatus?.configured && ws.aiStatus?.reason ? (
-        <p className="mt-2 rounded-md px-2 py-1.5 text-[12px]" style={{ background: "var(--color-sunken)", color: "var(--color-muted)" }}>
-          {ws.aiStatus.reason}
-        </p>
-      ) : null}
-
-      {ws.job && (running || ws.job.stage === "done" || ws.job.stage === "failed") ? (
-        <div className="mt-2 flex flex-wrap items-center gap-2 text-[12px]" role="status" aria-live="polite">
-          <span style={{ color: "var(--color-muted)" }}>
-            {ws.job.completed + ws.job.failed} of {ws.job.total} cells
-            {ws.job.failed ? ` · ${ws.job.failed} failed` : ""}
-            {ws.job.stage === "done" ? " · finished" : ws.job.stage === "failed" ? " · stopped" : ""}
+      {running || ws.job?.stage === "done" || ws.job?.stage === "failed" ? (
+        <div
+          className="flex flex-wrap items-center gap-2 border-t px-3 py-1.5 text-[12px] sm:px-4"
+          style={{ borderColor: "var(--border)", background: "var(--surface-2)" }}
+          role="status"
+          aria-live="polite"
+        >
+          <span style={{ color: "var(--text-2)" }}>
+            {ws.job!.completed + ws.job!.failed} of {ws.job!.total} cells
+            {ws.job!.failed ? ` · ${ws.job!.failed} failed` : ""}
+            {ws.job!.stage === "done" ? " · finished" : ws.job!.stage === "failed" ? " · stopped" : ""}
           </span>
-          <span className="h-1.5 w-40 overflow-hidden rounded" style={{ background: "var(--color-sunken)" }}>
+          <span className="h-1 w-36 overflow-hidden rounded-full" style={{ background: "var(--surface-3)" }}>
             <span
-              className="block h-full rounded transition-[width]"
+              className="block h-full rounded-full transition-[width] duration-300"
               style={{
-                width: `${Math.round(((ws.job.completed + ws.job.failed) / Math.max(ws.job.total, 1)) * 100)}%`,
-                background: "var(--color-accent)",
+                width: `${Math.round(((ws.job!.completed + ws.job!.failed) / Math.max(ws.job!.total, 1)) * 100)}%`,
+                background: "var(--accent)",
               }}
             />
           </span>
           {running ? (
-            <button className="btn btn-ghost" onClick={ws.cancelExtraction}>
-              Cancel
-            </button>
-          ) : null}
-          {running ? (
-            <span style={{ color: "var(--color-faint)" }}>
-              Runs in this tab — closing it pauses the work, and you can resume when you come back.
-            </span>
+            <>
+              <button className="btn btn-quiet btn-sm" onClick={ws.cancelExtraction}>
+                Cancel
+              </button>
+              <span style={{ color: "var(--text-3)" }}>
+                Runs in this tab. Closing it pauses the work; you can resume when you return.
+              </span>
+            </>
           ) : null}
         </div>
       ) : null}
 
       {ws.resumable && !running ? (
         <div
-          className="mt-2 flex flex-wrap items-center gap-2 rounded-md px-2 py-1.5 text-[12.5px]"
-          style={{ background: "var(--color-warn-soft)", color: "var(--color-warn)" }}
+          className="flex flex-wrap items-center gap-2 border-t px-3 py-1.5 text-[12.5px] sm:px-4"
+          style={{ borderColor: "var(--border)", background: "var(--warn-weak)", color: "var(--warn)" }}
         >
+          <IconAlert size={14} />
           <span>
-            An extraction run was interrupted with{" "}
+            An earlier run stopped with{" "}
             {ws.resumable.targets.filter((t) => t.state === "pending" || t.state === "running").length} cells unfinished.
           </span>
-          <button className="btn" onClick={() => ws.resumeJob()} disabled={!ws.aiStatus?.configured}>
+          <button className="btn btn-sm" onClick={() => ws.resumeJob()} disabled={!aiReady}>
             Resume
           </button>
-          <button className="btn btn-ghost" onClick={() => ws.dismissResumable()}>
+          <button className="btn btn-quiet btn-sm" onClick={() => ws.dismissResumable()}>
             Discard
           </button>
         </div>
@@ -436,14 +657,18 @@ function ProjectHeader({
 
       {confirmDelete ? (
         <div
-          className="mt-2 flex flex-wrap items-center gap-2 rounded-md px-2 py-1.5 text-[12.5px]"
-          style={{ background: "var(--color-alarm-soft)", color: "var(--color-alarm)" }}
+          className="flex flex-wrap items-center gap-2 border-t px-3 py-2 text-[12.5px] sm:px-4"
+          style={{ borderColor: "var(--border)", background: "var(--danger-weak)", color: "var(--danger)" }}
+          role="alertdialog"
+          aria-label="Confirm project deletion"
         >
-          <span>Delete “{project.title}”? Its columns and answers go too; the PDFs stay in your library.</span>
-          <button className="btn" onClick={() => ws.deleteProject(project.id)}>
+          <span>
+            Delete “{project.title}”? Its columns and answers go with it. The PDFs stay in your library.
+          </span>
+          <button className="btn btn-sm" onClick={() => ws.deleteProject(project.id)}>
             Delete project
           </button>
-          <button className="btn btn-ghost" onClick={() => setConfirmDelete(false)}>
+          <button className="btn btn-quiet btn-sm" onClick={() => setConfirmDelete(false)}>
             Cancel
           </button>
         </div>
@@ -452,29 +677,35 @@ function ProjectHeader({
   );
 }
 
-function EmptyWorkspace({ onCreate }: { onCreate: () => void }) {
+function EmptyWorkspace({ onCreate, onOpenNav }: { onCreate: () => void; onOpenNav: () => void }) {
   const ws = useWorkspace();
   return (
-    <div className="flex flex-1 items-center justify-center p-6">
-      <div className="max-w-lg">
-        <h1 className="text-[18px] font-semibold tracking-tight">Compare papers, and keep the receipts</h1>
-        <p className="mt-2 text-[13px]" style={{ color: "var(--color-muted)" }}>
-          Paplora turns a stack of PDFs into a comparison table where every extracted answer can be traced back to the
-          passage it came from. Everything is stored in this browser: no account, no upload to a server unless you turn
-          on automatic extraction.
-        </p>
-        <div className="mt-4 flex flex-wrap gap-2">
-          <button className="btn btn-primary" onClick={onCreate}>
-            Create a project
-          </button>
-          <button className="btn" onClick={() => ws.openSample()} disabled={Boolean(ws.busy)}>
-            {ws.busy ? ws.busy : "Explore sample project"}
-          </button>
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex h-12 items-center px-3 lg:hidden">
+        <button className="btn btn-quiet btn-icon" onClick={onOpenNav} aria-label="Open navigation">
+          <IconMenu />
+        </button>
+      </div>
+      <div className="flex flex-1 items-center justify-center p-6">
+        <div className="max-w-[30rem]">
+          <h1 className="text-[20px] font-semibold tracking-[-0.015em]">Compare papers, and keep the receipts</h1>
+          <p className="mt-2 text-[13.5px] leading-relaxed" style={{ color: "var(--text-2)" }}>
+            Put a set of PDFs in a project, decide what to extract from each one, and check every answer against the
+            passage it came from. Everything stays in this browser.
+          </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <button className="btn btn-primary" onClick={onCreate}>
+              <IconPlus size={15} />
+              Create a project
+            </button>
+            <button className="btn" onClick={() => ws.openSample()} disabled={Boolean(ws.busy)}>
+              {ws.busy ?? "Explore sample project"}
+            </button>
+          </div>
+          <p className="mt-3 text-[12px]" style={{ color: "var(--text-3)" }}>
+            The sample uses three fictional demo documents, kept separate from your own work.
+          </p>
         </div>
-        <p className="mt-3 text-[12px]" style={{ color: "var(--color-faint)" }}>
-          The sample uses three short fictional demo documents, kept separate from your own work. Nothing is added to
-          your projects unless you ask for it.
-        </p>
       </div>
     </div>
   );

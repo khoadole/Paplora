@@ -127,13 +127,33 @@ app/api/ai-status     truthful configuration status, never the key
 
 `npm run typecheck` and `npm run build` both pass. The built app was started and checked over HTTP: the workspace route, the AI-status endpoint, the PDF worker, the sample PDFs and the extract endpoint's unconfigured response all behave correctly.
 
-**Not verified.** No browser automation was available in this environment, so the interface was **not** clicked through, and no screenshots were taken at desktop or narrow widths: responsive behaviour, drag-and-drop, PDF rendering and highlight placement are implemented and typechecked but not visually confirmed. **No live model call was ever made** — the adapter is exercised entirely against mocked fetch, so nothing here says anything about real extraction accuracy. That measurement is the first thing to do with a working key.
+**Browser verification** (headless Chromium via Playwright, a dev dependency):
+
+```bash
+npm run build && npm start &          # or next start -p 3127
+node scripts/shots.mjs http://localhost:3127   # screenshots + layout assertions
+node scripts/flow.mjs  http://localhost:3127   # 12 end-to-end workflow checks
+```
+
+`shots.mjs` builds the sample project and checks four viewports (1440×900, 1920×1080, 1024×768, 390×844): it fails if the page itself scrolls horizontally, if fewer than three comparison columns are visible at 1440, if closing the evidence panel does not return width, or on any console error. `flow.mjs` creates a project, uploads a real PDF, adds a column, edits and reviews a cell, filters, exports CSV, reloads to confirm persistence, and checks the AI-off state and the sidebar preference. Both pass.
+
+**Not verified.** **No live model call was ever made** — the adapter is exercised entirely against mocked fetch, so nothing here says anything about real extraction accuracy. That measurement is the first thing to do with a working key. Screenshots were reviewed by eye at the four viewports above, but no human has used the interface.
 
 **Known issue:** `npm audit` reports a PostCSS advisory inside Next 15's bundled dependencies. Fixing it requires Next 16, which requires Node 20.9+, which this environment does not have.
 
 **Why these versions:** Node 18 is the runtime available here, so Next 15 (needs 18.18+) rather than 16 (needs 20.9+), pdfjs-dist 4.8.69 (the last release supporting Node 18), and Tailwind 3 — Tailwind 4's native binary requires Node ≥ 20 and npm therefore skips it, which breaks the build outright. On Node 20+ all three can move up.
 
 ---
+
+## Interface
+
+Three areas: a collapsible navigation sidebar (232px, or 56px collapsed), the table, and an evidence panel that is **closed until you select a cell**. Closing it gives the width back to the table — verified at 1440px, where the table grows from 764px to 1208px.
+
+The table uses `table-layout: fixed` with an explicit `<colgroup>`. That is the load-bearing decision: without it a single long answer stretches its column and pushes every other one off screen. Columns are resizable by dragging their right edge (or with the arrow keys when focused), and widths, hidden columns, sidebar state, density and theme all persist in the preferences record.
+
+Status is carried by an icon **and** a word, so the distinctions survive greyscale and colour blindness: Reviewed, Unreviewed, Ambiguous, Not reported, Unreadable, Failed, Stale. "Not reported" (the document was read; the answer is not in it) and "Unreadable" (the document could not be processed) are deliberately different states.
+
+Actions are ranked: **Add papers** is primary in an empty project and **Extract data** once papers are in; Add column and Export are secondary; rename, settings and delete live in an overflow menu. When extraction is unconfigured the workspace shows a small "AI not connected" chip that opens Settings — the environment-variable instructions live there, not in the middle of the work surface.
 
 ## Deliberately not built
 

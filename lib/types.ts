@@ -213,5 +213,14 @@ export interface JobTarget {
 export interface Preferences {
   id: "preferences";
   lastProjectId?: Id;
+  /** Width of the evidence panel when it is open, in px. */
   evidencePanelWidth?: number;
+  sidebarCollapsed?: boolean;
+  density?: "comfortable" | "compact";
+  /** "system" unless the user picked one explicitly. */
+  theme?: "system" | "light" | "dark";
+  /** Per-column widths in px, keyed by column id, so a layout survives a reload. */
+  columnWidths?: Record<Id, number>;
+  /** Column ids hidden from the table, keyed by project id. */
+  hiddenColumns?: Record<Id, Id[]>;
 }

@@ -1,37 +1,101 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { bulkTargets, cellFor, useWorkspace } from "@/lib/workspace";
-import { StatusChip } from "./status";
+import { StatusBadge } from "./status";
 import { displayValue } from "@/lib/export/run";
+import { Menu, MenuItem, MenuSeparator } from "./ui/menu";
+import {
+  IconChevronDown,
+  IconChevronLeft,
+  IconChevronRight,
+  IconColumns,
+  IconEdit,
+  IconMore,
+  IconQuote,
+  IconSearch,
+  IconSparkle,
+  IconSplit,
+  IconTrash,
+} from "./icons";
 import type { CellStatus, Column } from "@/lib/types";
 
 /**
  * The comparison table.
  *
- * Sorting a number column orders the values; it is NOT a ranking, and the header
- * says so. Missing, ambiguous and unreadable cells never sort as if they were
- * zero — they collect at the end, keeping "no information" distinct from "low".
+ * `table-layout: fixed` with an explicit <colgroup> is what makes this readable:
+ * without it one long answer stretches its column and pushes every other column
+ * off screen — the single biggest cause of "only one comparison column visible".
+ * Widths are user-adjustable and persisted.
+ *
+ * Sorting a number column orders values; it is not a ranking, and the header says
+ * so. Missing and ambiguous values sort to the end rather than behaving like zero.
  */
 
 type SortState = { columnId: string; direction: "asc" | "desc" } | null;
 
+const PAPER_MIN = 200;
+const PAPER_DEFAULT = 288;
+const DATA_MIN = 140;
+const DATA_DEFAULT = 208;
+const COLUMN_MAX = 640;
+const PAPER_KEY = "__paper__";
+
 const NUMBER_PATTERN = /-?\d+(\.\d+)?/;
+
+/** True below the sm breakpoint. Drives the narrow-screen table behaviour. */
+function useNarrow() {
+  const [narrow, setNarrow] = useState(false);
+  useEffect(() => {
+    const query = window.matchMedia("(max-width: 640px)");
+    const sync = () => setNarrow(query.matches);
+    sync();
+    query.addEventListener("change", sync);
+    return () => query.removeEventListener("change", sync);
+  }, []);
+  return narrow;
+}
 
 function numericValue(text: string): number | null {
   const match = NUMBER_PATTERN.exec(text.replace(/,/g, ""));
   return match ? Number(match[0]) : null;
 }
 
-export function ComparisonTable() {
+export function ComparisonTable({
+  onOpenEvidence,
+  evidenceOpen,
+}: {
+  onOpenEvidence: () => void;
+  evidenceOpen: boolean;
+}) {
   const ws = useWorkspace();
   const [sort, setSort] = useState<SortState>(null);
   const [filter, setFilter] = useState("");
-  const [statusFilter, setStatusFilter] = useState<"all" | "unreviewed" | "needs_attention">("all");
+  const [statusFilter, setStatusFilter] = useState<"all" | "unreviewed" | "attention">("all");
   const [editingColumn, setEditingColumn] = useState<Column | null>(null);
-  const [splitFor, setSplitFor] = useState<string | null>(null);
+  const [rowMenuFor, setRowMenuFor] = useState<string | null>(null);
   const [splitLabel, setSplitLabel] = useState("");
+  const scroller = useRef<HTMLDivElement | null>(null);
+
   const running = ws.job?.stage === "extracting" || ws.job?.stage === "queued";
+  const hidden = ws.prefs.hiddenColumns?.[ws.project?.id ?? ""] ?? [];
+  const widths = ws.prefs.columnWidths ?? {};
+  const visibleColumns = ws.columns.filter((column) => !hidden.includes(column.id));
+  const narrow = useNarrow();
+  const storedPaperWidth = widths[PAPER_KEY] ?? PAPER_DEFAULT;
+  const paperWidth = narrow ? Math.min(storedPaperWidth, 150) : storedPaperWidth;
+  /** Freezing the paper column only helps when there is room left to read. */
+  const stickyPaper = narrow ? "" : "sticky left-0";
+
+  const setWidth = (key: string, value: number) =>
+    ws.setPrefs({ columnWidths: { ...widths, [key]: Math.round(value) } });
+
+  const toggleHidden = (columnId: string) => {
+    const projectId = ws.project?.id;
+    if (!projectId) return;
+    const next = hidden.includes(columnId) ? hidden.filter((id) => id !== columnId) : [...hidden, columnId];
+    ws.setPrefs({ hiddenColumns: { ...(ws.prefs.hiddenColumns ?? {}), [projectId]: next } });
+  };
 
   const visibleRows = useMemo(() => {
     let list = ws.rows;
@@ -39,13 +103,16 @@ export function ComparisonTable() {
       const needle = filter.toLowerCase();
       list = list.filter((row) => {
         const source = ws.sources.find((s) => s.id === row.sourceId);
-        const inTitle = (source?.title ?? "").toLowerCase().includes(needle);
-        const inConfig = (row.configurationLabel ?? "").toLowerCase().includes(needle);
-        const inCells = ws.columns.some((column) => {
-          const shown = displayValue(cellFor(ws.cells, row.id, column.id));
-          return shown.value.toLowerCase().includes(needle) || (shown.conditions ?? "").toLowerCase().includes(needle);
-        });
-        return inTitle || inConfig || inCells;
+        return (
+          (source?.title ?? "").toLowerCase().includes(needle) ||
+          (row.configurationLabel ?? "").toLowerCase().includes(needle) ||
+          ws.columns.some((column) => {
+            const shown = displayValue(cellFor(ws.cells, row.id, column.id));
+            return (
+              shown.value.toLowerCase().includes(needle) || (shown.conditions ?? "").toLowerCase().includes(needle)
+            );
+          })
+        );
       });
     }
     if (statusFilter !== "all") {
@@ -65,7 +132,6 @@ export function ComparisonTable() {
         const right = displayValue(cellFor(ws.cells, b.id, sort.columnId));
         const leftMissing = !left.value.trim();
         const rightMissing = !right.value.trim();
-        // Missing information always sinks, in both directions.
         if (leftMissing && rightMissing) return 0;
         if (leftMissing) return 1;
         if (rightMissing) return -1;
@@ -85,83 +151,69 @@ export function ComparisonTable() {
     return list;
   }, [ws.rows, ws.sources, ws.columns, ws.cells, filter, statusFilter, sort]);
 
-  if (!ws.columns.length) {
-    return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-2 p-10 text-center">
-        <p className="text-[14px] font-medium">No columns yet</p>
-        <p className="max-w-sm text-[13px]" style={{ color: "var(--color-muted)" }}>
-          A column is one question you want answered for every paper — the method, the evaluation split, the reported
-          number. Add one to start the table.
-        </p>
-      </div>
-    );
-  }
-
-  if (!ws.rows.length) {
-    return (
-      <div className="flex flex-1 flex-col items-center justify-center gap-2 p-10 text-center">
-        <p className="text-[14px] font-medium">No papers in this project</p>
-        <p className="max-w-sm text-[13px]" style={{ color: "var(--color-muted)" }}>
-          Add PDFs with “Add papers”. Each paper becomes one row; you can split a paper into several rows later if it
-          reports more than one configuration.
-        </p>
-      </div>
-    );
+  if (!ws.columns.length || !ws.rows.length) {
+    return <EmptyProject hasColumns={ws.columns.length > 0} hasRows={ws.rows.length > 0} />;
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex flex-wrap items-center gap-2 border-b px-3 py-2" style={{ borderColor: "var(--color-line)" }}>
-        <input
-          className="field max-w-[15rem]"
-          placeholder="Filter rows…"
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-          aria-label="Filter rows"
-        />
-        <select
-          className="field max-w-[12rem]"
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
-          aria-label="Filter by review state"
-        >
-          <option value="all">All rows</option>
-          <option value="unreviewed">Has unreviewed answers</option>
-          <option value="needs_attention">Needs attention</option>
-        </select>
-        {sort ? (
-          <button className="btn btn-ghost" onClick={() => setSort(null)}>
-            Clear sort
-          </button>
-        ) : null}
-        <span className="ml-auto text-[12px]" style={{ color: "var(--color-muted)" }}>
-          {visibleRows.length} of {ws.rows.length} rows
-        </span>
-      </div>
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <Toolbar
+        filter={filter}
+        onFilter={setFilter}
+        statusFilter={statusFilter}
+        onStatusFilter={setStatusFilter}
+        hidden={hidden}
+        onToggleHidden={toggleHidden}
+        sorted={Boolean(sort)}
+        onClearSort={() => setSort(null)}
+        visible={visibleRows.length}
+        total={ws.rows.length}
+      />
 
-      <div className="min-h-0 flex-1 overflow-auto">
-        <table className="w-max min-w-full border-collapse text-[13px]">
+      <div ref={scroller} className="scroll-area min-h-0 min-w-0 flex-1 overflow-auto">
+        <table
+          className="border-separate border-spacing-0 text-[14px]"
+          style={{ tableLayout: "fixed", width: paperWidth + visibleColumns.length * DATA_DEFAULT }}
+        >
+          <colgroup>
+            <col style={{ width: paperWidth }} />
+            {visibleColumns.map((column) => (
+              <col key={column.id} style={{ width: widths[column.id] ?? DATA_DEFAULT }} />
+            ))}
+          </colgroup>
+
           <thead>
             <tr>
               <th
-                className="sticky left-0 top-0 z-20 min-w-[15rem] max-w-[22rem] border-b border-r px-3 py-2 text-left align-bottom"
-                style={{ borderColor: "var(--color-line)", background: "var(--color-surface)" }}
                 scope="col"
+                className={`${stickyPaper} top-0 z-30 overflow-hidden border-b border-r px-3 py-1.5 text-left align-bottom text-[12.5px] font-semibold sticky`}
+                style={{ borderColor: "var(--border)", background: "var(--surface)", color: "var(--text-3)" }}
               >
-                Paper
+                <div className="relative flex items-end justify-between gap-1">
+                  <span className="truncate">Paper</span>
+                  {narrow ? null : (
+                    <ResizeGrip
+                      label="Resize paper column"
+                      width={paperWidth}
+                      min={PAPER_MIN}
+                      onChange={(next) => setWidth(PAPER_KEY, next)}
+                    />
+                  )}
+                </div>
               </th>
-              {ws.columns.map((column, index) => {
+
+              {visibleColumns.map((column, index) => {
                 const sorted = sort?.columnId === column.id;
                 return (
                   <th
                     key={column.id}
                     scope="col"
-                    className="sticky top-0 z-10 min-w-[13rem] max-w-[20rem] border-b border-r px-2 py-1.5 text-left align-bottom"
-                    style={{ borderColor: "var(--color-line)", background: "var(--color-surface)" }}
+                    className="sticky top-0 z-20 overflow-hidden border-b border-r px-2 py-1.5 text-left align-bottom"
+                    style={{ borderColor: "var(--border)", background: "var(--surface)" }}
                   >
-                    <div className="flex items-start justify-between gap-1">
+                    <div className="relative flex items-end justify-between gap-1">
                       <button
-                        className="btn btn-ghost px-1 py-0.5 text-left text-[12.5px] font-semibold"
+                        className="min-w-0 flex-1 text-left"
                         onClick={() =>
                           setSort((current) =>
                             current?.columnId === column.id && current.direction === "asc"
@@ -171,101 +223,171 @@ export function ComparisonTable() {
                         }
                         title={
                           column.answerType === "number"
-                            ? "Order by this value. Ordering is not a scientific ranking: conditions differ between papers."
-                            : "Order by this column"
+                            ? `Sort by ${column.label}. Ordering is not a ranking: conditions differ between papers.`
+                            : `Sort by ${column.label}`
                         }
                       >
-                        {column.label}
-                        {sorted ? <span aria-hidden>{sort?.direction === "asc" ? " ↑" : " ↓"}</span> : null}
+                        <span className="flex items-center gap-1">
+                          <span className="truncate text-[12.5px] font-semibold">{column.label}</span>
+                          {sorted ? (
+                            <IconChevronDown
+                              size={13}
+                              style={{
+                                color: "var(--accent)",
+                                transform: sort?.direction === "asc" ? "rotate(180deg)" : undefined,
+                              }}
+                            />
+                          ) : null}
+                        </span>
                         {column.unit ? (
-                          <span className="ml-1 font-normal" style={{ color: "var(--color-faint)" }}>
-                            ({column.unit})
+                          <span className="block truncate text-[11.5px] font-normal" style={{ color: "var(--text-3)" }}>
+                            {column.unit}
                           </span>
                         ) : null}
                       </button>
-                      <span className="flex shrink-0 items-center">
-                        <button
-                          className="btn btn-ghost px-1 py-0.5"
-                          onClick={() => ws.moveColumn(column.id, -1)}
+
+                      <Menu
+                        label={`${column.label} column actions`}
+                        align="end"
+                        trigger={
+                          <button className="btn btn-quiet btn-icon btn-sm" aria-label={`${column.label} column actions`}>
+                            <IconMore size={15} />
+                          </button>
+                        }
+                      >
+                        <MenuItem icon={<IconEdit />} onSelect={() => setEditingColumn(column)}>
+                          Edit column…
+                        </MenuItem>
+                        <MenuItem
+                          icon={<IconSparkle />}
+                          disabled={!ws.aiStatus?.configured || running}
+                          onSelect={() => ws.extract(bulkTargets(ws.cells, ws.rows, [column]))}
+                        >
+                          Extract this column
+                        </MenuItem>
+                        <MenuSeparator />
+                        <MenuItem
+                          icon={<IconChevronLeft />}
                           disabled={index === 0}
-                          aria-label={`Move ${column.label} left`}
+                          onSelect={() => ws.moveColumn(column.id, -1)}
                         >
-                          ‹
-                        </button>
-                        <button
-                          className="btn btn-ghost px-1 py-0.5"
-                          onClick={() => ws.moveColumn(column.id, 1)}
-                          disabled={index === ws.columns.length - 1}
-                          aria-label={`Move ${column.label} right`}
+                          Move left
+                        </MenuItem>
+                        <MenuItem
+                          icon={<IconChevronRight />}
+                          disabled={index === visibleColumns.length - 1}
+                          onSelect={() => ws.moveColumn(column.id, 1)}
                         >
-                          ›
-                        </button>
-                        <button
-                          className="btn btn-ghost px-1 py-0.5"
-                          onClick={() => setEditingColumn(column)}
-                          aria-label={`Edit ${column.label}`}
-                        >
-                          ⋯
-                        </button>
-                      </span>
+                          Move right
+                        </MenuItem>
+                        <MenuItem icon={<IconColumns />} onSelect={() => toggleHidden(column.id)}>
+                          Hide column
+                        </MenuItem>
+                        <MenuSeparator />
+                        <MenuItem icon={<IconTrash />} danger onSelect={() => ws.removeColumn(column.id)}>
+                          Delete column
+                        </MenuItem>
+                      </Menu>
+
+                      <ResizeGrip
+                        label={`Resize ${column.label}`}
+                        width={widths[column.id] ?? DATA_DEFAULT}
+                        min={DATA_MIN}
+                        onChange={(next) => setWidth(column.id, next)}
+                      />
                     </div>
                   </th>
                 );
               })}
             </tr>
           </thead>
+
           <tbody>
             {visibleRows.map((row) => {
               const source = ws.sources.find((s) => s.id === row.sourceId);
               const version = source ? ws.versions[source.id] : undefined;
               return (
-                <tr key={row.id}>
+                <tr key={row.id} className="group">
                   <th
                     scope="row"
-                    className="sticky left-0 z-10 border-b border-r px-3 py-2 text-left align-top font-normal"
-                    style={{ borderColor: "var(--color-line)", background: "var(--color-surface)" }}
+                    className={`${stickyPaper} z-10 overflow-hidden border-b border-r px-3 text-left align-top font-normal`}
+                    style={{
+                      borderColor: "var(--border)",
+                      background: "var(--surface)",
+                      paddingTop: "var(--cell-pad-y)",
+                      paddingBottom: "var(--cell-pad-y)",
+                    }}
                   >
-                    <div className="flex items-start justify-between gap-2">
+                    <div className="flex min-w-0 items-start justify-between gap-1">
                       <div className="min-w-0">
-                        <p className="truncate font-medium" title={source?.title}>
+                        <p className="line-clamp-2 text-[13.5px] font-medium leading-snug" title={source?.title}>
                           {source?.title ?? "Unknown document"}
                         </p>
                         {row.configurationLabel ? (
-                          <p className="truncate text-[12px]" style={{ color: "var(--color-accent)" }}>
+                          <p className="mt-0.5 truncate text-[12px]" style={{ color: "var(--accent)" }}>
                             {row.configurationLabel}
                           </p>
                         ) : null}
-                        <p className="mt-0.5 flex flex-wrap items-center gap-1 text-[11.5px]" style={{ color: "var(--color-faint)" }}>
+                        <p className="mt-1 flex flex-wrap items-center gap-1 text-[11.5px]" style={{ color: "var(--text-3)" }}>
                           {version ? <span>{version.pageCount} pages</span> : null}
                           {version?.parseStatus === "no_text_layer" ? (
-                            <span className="chip" style={{ color: "var(--color-alarm)" }}>
+                            <span className="badge" style={{ background: "var(--danger-weak)", color: "var(--danger)", borderColor: "transparent" }}>
                               no text layer
                             </span>
                           ) : null}
                           {version && version.pagesWithText > 0 && version.pagesWithText < version.pageCount ? (
-                            <span className="chip" title={version.parseMessage}>
+                            <span className="badge" title={version.parseMessage}>
                               {version.pagesWithText}/{version.pageCount} readable
                             </span>
                           ) : null}
                         </p>
                       </div>
-                      <button
-                        className="btn btn-ghost shrink-0 px-1 py-0.5"
-                        onClick={() => {
-                          setSplitFor(row.id);
-                          setSplitLabel(row.configurationLabel ?? "");
-                        }}
-                        aria-label={`Row options for ${source?.title ?? "row"}`}
-                        title="Split into configuration rows, rename, or remove"
+
+                      <Menu
+                        label="Row actions"
+                        align="end"
+                        trigger={
+                          <button
+                            className="btn btn-quiet btn-icon btn-sm opacity-0 transition-opacity focus:opacity-100 group-hover:opacity-100"
+                            aria-label={`Actions for ${source?.title ?? "row"}`}
+                          >
+                            <IconMore size={15} />
+                          </button>
+                        }
                       >
-                        ⋯
-                      </button>
+                        <MenuItem
+                          icon={<IconSparkle />}
+                          disabled={!ws.aiStatus?.configured || running}
+                          onSelect={() => ws.extract(bulkTargets(ws.cells, [row], ws.columns))}
+                        >
+                          Extract this paper
+                        </MenuItem>
+                        <MenuItem
+                          icon={<IconSplit />}
+                          onSelect={() => {
+                            setRowMenuFor(row.id);
+                            setSplitLabel(row.configurationLabel ?? "");
+                          }}
+                        >
+                          {row.configurationLabel ? "Rename configuration…" : "Split into configurations…"}
+                        </MenuItem>
+                        <MenuSeparator />
+                        {row.configurationLabel ? (
+                          <MenuItem icon={<IconTrash />} danger onSelect={() => ws.removeRow(row.id)}>
+                            Remove this row
+                          </MenuItem>
+                        ) : (
+                          <MenuItem icon={<IconTrash />} danger onSelect={() => ws.removeSource(row.sourceId)}>
+                            Remove paper from project
+                          </MenuItem>
+                        )}
+                      </Menu>
                     </div>
 
-                    {splitFor === row.id ? (
-                      <div className="mt-2 space-y-1.5 rounded-md border p-2" style={{ borderColor: "var(--color-line)" }}>
+                    {rowMenuFor === row.id ? (
+                      <div className="mt-2 rounded-md border p-2" style={{ borderColor: "var(--border)" }}>
                         <label className="label-text" htmlFor={`config-${row.id}`}>
-                          Configuration label for this row
+                          Configuration label
                         </label>
                         <input
                           id={`config-${row.id}`}
@@ -273,100 +395,97 @@ export function ComparisonTable() {
                           value={splitLabel}
                           onChange={(e) => setSplitLabel(e.target.value)}
                           placeholder="e.g. ViT-L, 16 frames"
+                          autoFocus
                         />
-                        <div className="flex flex-wrap gap-1.5">
+                        <div className="mt-1.5 flex flex-wrap gap-1.5">
                           <button
-                            className="btn"
+                            className="btn btn-sm"
                             onClick={async () => {
                               await ws.editRowLabel(row.id, splitLabel.trim());
-                              setSplitFor(null);
+                              setRowMenuFor(null);
                             }}
                           >
                             Label this row
                           </button>
                           <button
-                            className="btn"
+                            className="btn btn-sm"
+                            title="Adds a second row over the same paper so two configurations can be compared separately"
                             onClick={async () => {
                               await ws.splitRow(row.id, splitLabel.trim() || "second configuration");
-                              setSplitFor(null);
+                              setRowMenuFor(null);
                             }}
-                            title="Adds another row over the same paper, so two configurations can be compared separately"
                           >
-                            Add a configuration row
+                            Add a row
                           </button>
-                          <button
-                            className="btn"
-                            onClick={() => ws.extract(bulkTargets(ws.cells, [row], ws.columns))}
-                            disabled={!ws.aiStatus?.configured || running}
-                            title={ws.aiStatus?.configured ? "Extract every unanswered cell in this row" : ws.aiStatus?.reason}
-                          >
-                            Extract this paper
-                          </button>
-                          <button className="btn btn-ghost" onClick={() => setSplitFor(null)}>
+                          <button className="btn btn-quiet btn-sm" onClick={() => setRowMenuFor(null)}>
                             Cancel
                           </button>
-                          {row.configurationLabel ? (
-                            <button
-                              className="btn btn-ghost"
-                              style={{ color: "var(--color-alarm)" }}
-                              onClick={async () => {
-                                await ws.removeRow(row.id);
-                                setSplitFor(null);
-                              }}
-                            >
-                              Remove this row
-                            </button>
-                          ) : null}
                         </div>
                       </div>
                     ) : null}
                   </th>
 
-                  {ws.columns.map((column) => {
+                  {visibleColumns.map((column) => {
                     const cell = cellFor(ws.cells, row.id, column.id);
                     const shown = displayValue(cell);
                     const status: CellStatus = cell?.status ?? "empty";
-                    const isSelected = ws.selected?.rowId === row.id && ws.selected?.columnId === column.id;
+                    const selected = ws.selected?.rowId === row.id && ws.selected?.columnId === column.id;
+                    const citations = cell?.proposal?.evidence.length ?? 0;
                     return (
                       <td
                         key={column.id}
-                        className="border-b border-r p-0 align-top"
-                        style={{ borderColor: "var(--color-line)" }}
+                        className="overflow-hidden border-b border-r p-0 align-top"
+                        style={{ borderColor: "var(--border)" }}
                       >
                         <button
-                          className="h-full w-full px-2 py-2 text-left"
+                          className="h-full w-full px-2 text-left transition-colors"
                           style={{
-                            background: isSelected ? "var(--color-accent-soft)" : "transparent",
-                            outline: isSelected ? "2px solid var(--color-accent)" : "none",
-                            outlineOffset: "-2px",
+                            minHeight: "var(--row-height)",
+                            paddingTop: "var(--cell-pad-y)",
+                            paddingBottom: "var(--cell-pad-y)",
+                            background: selected ? "var(--accent-weak)" : undefined,
+                            boxShadow: selected ? "inset 0 0 0 2px var(--accent)" : undefined,
                           }}
-                          onClick={() => ws.selectCell({ rowId: row.id, columnId: column.id })}
-                          aria-label={`${column.label} for ${source?.title ?? "row"}: ${shown.value || "empty"}`}
+                          onClick={() => {
+                            ws.selectCell({ rowId: row.id, columnId: column.id });
+                            onOpenEvidence();
+                          }}
+                          aria-label={`${column.label} for ${source?.title ?? "row"}: ${shown.value || "empty"}. ${status}.`}
+                          aria-pressed={selected}
                         >
-                          <span className="flex items-start justify-between gap-1">
-                            <span className="line-clamp-3 min-w-0 break-words">
-                              {shown.value || <span style={{ color: "var(--color-faint)" }}>—</span>}
+                          <span className="flex items-start gap-1">
+                            <span className="line-clamp-2 min-w-0 flex-1 break-words leading-snug">
+                              {shown.value || <span style={{ color: "var(--text-3)" }}>—</span>}
                               {shown.unit && shown.value ? (
-                                <span className="ml-1 text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+                                <span className="ml-1 text-[12px]" style={{ color: "var(--text-2)" }}>
                                   {shown.unit}
                                 </span>
                               ) : null}
                             </span>
-                            {cell?.pendingProposal ? (
-                              <span className="chip shrink-0" style={{ color: "var(--color-warn)" }} title="A newer AI answer is waiting for your decision">
-                                new
+                            {citations ? (
+                              <span
+                                className="mt-0.5 shrink-0"
+                                style={{ color: "var(--text-3)" }}
+                                title={`${citations} supporting passage${citations === 1 ? "" : "s"} — open to read`}
+                              >
+                                <IconQuote size={13} />
                               </span>
                             ) : null}
                           </span>
                           {shown.conditions ? (
-                            <span className="mt-1 line-clamp-2 block text-[11.5px]" style={{ color: "var(--color-muted)" }}>
+                            <span className="mt-0.5 line-clamp-1 block text-[11.5px]" style={{ color: "var(--text-2)" }} title={shown.conditions}>
                               {shown.conditions}
                             </span>
                           ) : null}
-                          <span className="mt-1 flex items-center gap-1">
-                            <StatusChip status={status} />
+                          <span className="mt-1 flex flex-wrap items-center gap-1">
+                            <StatusBadge status={status} />
+                            {cell?.pendingProposal ? (
+                              <span className="badge" style={{ background: "var(--warn-weak)", color: "var(--warn)", borderColor: "transparent" }}>
+                                new answer
+                              </span>
+                            ) : null}
                             {cell?.proposal?.partialCoverage ? (
-                              <span className="chip" title="Some pages of this document were not read for this answer.">
+                              <span className="badge" title="Some pages of this document were not read for this answer.">
                                 partial read
                               </span>
                             ) : null}
@@ -380,37 +499,256 @@ export function ComparisonTable() {
             })}
           </tbody>
         </table>
+
+        {/* With only a few rows the rest of the surface stays quiet. */}
+        <div aria-hidden style={{ height: 24 }} />
       </div>
 
-      <ColumnEditor column={editingColumn} onClose={() => setEditingColumn(null)} />
+      {editingColumn ? (
+        <ColumnEditor column={editingColumn} onClose={() => setEditingColumn(null)} evidenceOpen={evidenceOpen} />
+      ) : null}
     </div>
   );
 }
 
-function ColumnEditor({ column, onClose }: { column: Column | null; onClose: () => void }) {
+function ResizeGrip({
+  label,
+  width,
+  min,
+  onChange,
+}: {
+  label: string;
+  width: number;
+  min: number;
+  onChange: (next: number) => void;
+}) {
+  const [active, setActive] = useState(false);
+  return (
+    <span
+      role="separator"
+      aria-orientation="vertical"
+      aria-label={label}
+      aria-valuenow={width}
+      aria-valuemin={min}
+      aria-valuemax={COLUMN_MAX}
+      tabIndex={0}
+      data-active={active}
+      className="resize-handle"
+      onKeyDown={(e) => {
+        if (e.key === "ArrowLeft") onChange(Math.max(min, width - 24));
+        if (e.key === "ArrowRight") onChange(Math.min(COLUMN_MAX, width + 24));
+      }}
+      onPointerDown={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setActive(true);
+        const startX = e.clientX;
+        const startWidth = width;
+        const move = (event: PointerEvent) =>
+          onChange(Math.max(min, Math.min(COLUMN_MAX, startWidth + (event.clientX - startX))));
+        const up = () => {
+          setActive(false);
+          window.removeEventListener("pointermove", move);
+          window.removeEventListener("pointerup", up);
+        };
+        window.addEventListener("pointermove", move);
+        window.addEventListener("pointerup", up);
+      }}
+    />
+  );
+}
+
+function Toolbar({
+  filter,
+  onFilter,
+  statusFilter,
+  onStatusFilter,
+  hidden,
+  onToggleHidden,
+  sorted,
+  onClearSort,
+  visible,
+  total,
+}: {
+  filter: string;
+  onFilter: (value: string) => void;
+  statusFilter: "all" | "unreviewed" | "attention";
+  onStatusFilter: (value: "all" | "unreviewed" | "attention") => void;
+  hidden: string[];
+  onToggleHidden: (columnId: string) => void;
+  sorted: boolean;
+  onClearSort: () => void;
+  visible: number;
+  total: number;
+}) {
   const ws = useWorkspace();
-  const [draft, setDraft] = useState<Column | null>(column);
+  const density = ws.prefs.density ?? "comfortable";
+  return (
+    <div
+      className="flex flex-wrap items-center gap-2 border-b px-3 py-2"
+      style={{ borderColor: "var(--border)", background: "var(--surface)" }}
+    >
+      <div className="relative">
+        <IconSearch size={14} className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2" style={{ color: "var(--text-3)" }} />
+        <input
+          className="field w-[15rem] pl-7"
+          placeholder="Search papers, answers"
+          value={filter}
+          onChange={(e) => onFilter(e.target.value)}
+          aria-label="Search papers and answers"
+        />
+      </div>
 
-  if (column && (!draft || draft.id !== column.id)) setDraft(column);
-  if (!column || !draft) return null;
+      <select
+        className="field w-auto"
+        value={statusFilter}
+        onChange={(e) => onStatusFilter(e.target.value as typeof statusFilter)}
+        aria-label="Filter by review state"
+      >
+        <option value="all">All rows</option>
+        <option value="unreviewed">Unreviewed answers</option>
+        <option value="attention">Needs attention</option>
+      </select>
 
+      <Menu
+        label="Column visibility"
+        trigger={
+          <button className="btn" aria-label="Show or hide columns">
+            <IconColumns size={15} />
+            <span className="hidden sm:inline">Columns</span>
+            {hidden.length ? <span className="badge">{hidden.length} hidden</span> : null}
+          </button>
+        }
+      >
+        {ws.columns.map((column) => (
+          <MenuItem key={column.id} onSelect={() => onToggleHidden(column.id)}>
+            <span className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                readOnly
+                checked={!hidden.includes(column.id)}
+                aria-label={`Show ${column.label}`}
+                tabIndex={-1}
+              />
+              {column.label}
+            </span>
+          </MenuItem>
+        ))}
+      </Menu>
+
+      {sorted ? (
+        <button className="btn btn-quiet" onClick={onClearSort}>
+          Clear sort
+        </button>
+      ) : null}
+
+      <div className="ml-auto flex items-center gap-2">
+        <button
+          className="btn btn-quiet btn-sm"
+          onClick={() => ws.setPrefs({ density: density === "compact" ? "comfortable" : "compact" })}
+          title="Toggle row density"
+        >
+          {density === "compact" ? "Comfortable rows" : "Compact rows"}
+        </button>
+        <span className="text-[12px] tabular-nums" style={{ color: "var(--text-3)" }}>
+          {visible === total ? `${total} rows` : `${visible} of ${total} rows`}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function EmptyProject({ hasColumns, hasRows }: { hasColumns: boolean; hasRows: boolean }) {
+  const ws = useWorkspace();
+  const [dragging, setDragging] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  if (hasRows && !hasColumns) {
+    return (
+      <div className="flex flex-1 items-center justify-center p-10">
+        <div className="max-w-sm text-center">
+          <h2 className="text-[15px] font-semibold">Decide what to compare</h2>
+          <p className="mt-1.5 text-[13px] leading-relaxed" style={{ color: "var(--text-2)" }}>
+            A column is one question asked of every paper — the method, the evaluation split, the number they report.
+            Add one from a preset or write your own.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-1 items-center justify-center p-6">
+      <div
+        className="w-full max-w-lg rounded-lg border-2 border-dashed p-8 text-center"
+        style={{
+          borderColor: dragging ? "var(--accent)" : "var(--border-2)",
+          background: dragging ? "var(--accent-weak)" : "var(--surface)",
+        }}
+        onDragOver={(e) => {
+          e.preventDefault();
+          setDragging(true);
+        }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={async (e) => {
+          e.preventDefault();
+          setDragging(false);
+          const outcomes = await ws.uploadFiles(Array.from(e.dataTransfer.files));
+          const rejected = outcomes.filter((o) => o.status === "rejected");
+          setMessage(
+            rejected.length
+              ? `${rejected.length} file(s) were not added: ${rejected[0].message}`
+              : `${outcomes.length} paper(s) added.`,
+          );
+        }}
+      >
+        <h2 className="text-[15px] font-semibold">Add the papers you want to compare</h2>
+        <p className="mx-auto mt-1.5 max-w-sm text-[13px] leading-relaxed" style={{ color: "var(--text-2)" }}>
+          Drop PDFs here, or use <span className="font-medium">Add papers</span> above. Each paper becomes a row; then
+          add columns for what you want to pull out of every one of them.
+        </p>
+        {ws.busy ? (
+          <p className="mt-3 text-[12.5px]" role="status" style={{ color: "var(--text-2)" }}>
+            {ws.busy}
+          </p>
+        ) : null}
+        {message ? (
+          <p className="mt-3 text-[12.5px]" role="status" style={{ color: "var(--text-2)" }}>
+            {message}
+          </p>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function ColumnEditor({
+  column,
+  onClose,
+  evidenceOpen,
+}: {
+  column: Column;
+  onClose: () => void;
+  evidenceOpen: boolean;
+}) {
+  const ws = useWorkspace();
+  const [draft, setDraft] = useState<Column>(column);
   const instructionChanged = draft.instruction !== column.instruction || draft.answerType !== column.answerType;
 
   return (
-    <div className="border-t px-3 py-3" style={{ borderColor: "var(--color-line)", background: "var(--color-sunken)" }}>
+    <div
+      className="border-t px-3 py-3"
+      style={{ borderColor: "var(--border)", background: "var(--surface-2)" }}
+      aria-label={`Edit column ${column.label}`}
+    >
       <div className="flex flex-wrap items-end gap-2">
         <div className="min-w-[10rem] flex-1">
           <label className="label-text" htmlFor="col-label">
             Label
           </label>
-          <input
-            id="col-label"
-            className="field"
-            value={draft.label}
-            onChange={(e) => setDraft({ ...draft, label: e.target.value })}
-          />
+          <input id="col-label" className="field" value={draft.label} onChange={(e) => setDraft({ ...draft, label: e.target.value })} />
         </div>
-        <div className="min-w-[8rem]">
+        <div className="w-36">
           <label className="label-text" htmlFor="col-type">
             Answer type
           </label>
@@ -429,28 +767,23 @@ function ColumnEditor({ column, onClose }: { column: Column | null; onClose: () 
           <label className="label-text" htmlFor="col-unit">
             Unit
           </label>
-          <input
-            id="col-unit"
-            className="field"
-            value={draft.unit ?? ""}
-            onChange={(e) => setDraft({ ...draft, unit: e.target.value })}
-          />
+          <input id="col-unit" className="field" value={draft.unit ?? ""} onChange={(e) => setDraft({ ...draft, unit: e.target.value })} />
         </div>
       </div>
-      <div className="mt-2">
+      <div className={`mt-2 ${evidenceOpen ? "" : "max-w-3xl"}`}>
         <label className="label-text" htmlFor="col-instruction">
           Extraction instruction
         </label>
         <textarea
           id="col-instruction"
-          className="field min-h-[56px]"
+          className="field min-h-[54px]"
           value={draft.instruction}
           onChange={(e) => setDraft({ ...draft, instruction: e.target.value })}
         />
       </div>
       {instructionChanged ? (
-        <p className="mt-1.5 text-[12px]" style={{ color: "var(--color-warn)" }}>
-          Saving this marks unreviewed AI answers in this column as stale. Your own edits and reviewed cells are kept.
+        <p className="mt-1.5 text-[12px]" style={{ color: "var(--warn)" }}>
+          Saving marks unreviewed AI answers in this column stale. Your own edits and reviewed cells are kept.
         </p>
       ) : null}
       <div className="mt-2 flex gap-2">
@@ -470,24 +803,6 @@ function ColumnEditor({ column, onClose }: { column: Column | null; onClose: () 
         </button>
         <button className="btn" onClick={onClose}>
           Cancel
-        </button>
-        <button
-          className="btn"
-          onClick={() => ws.extract(bulkTargets(ws.cells, ws.rows, [draft]))}
-          disabled={!ws.aiStatus?.configured || !ws.rows.length}
-          title={ws.aiStatus?.configured ? "Extract this column for every paper" : ws.aiStatus?.reason}
-        >
-          Extract this column
-        </button>
-        <button
-          className="btn btn-ghost ml-auto"
-          style={{ color: "var(--color-alarm)" }}
-          onClick={async () => {
-            await ws.removeColumn(draft.id);
-            onClose();
-          }}
-        >
-          Delete column
         </button>
       </div>
     </div>

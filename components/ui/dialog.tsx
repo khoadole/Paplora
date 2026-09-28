@@ -2,6 +2,7 @@
 
 import * as RadixDialog from "@radix-ui/react-dialog";
 import type { ReactNode } from "react";
+import { IconClose } from "../icons";
 
 /**
  * Radix supplies the parts that are easy to get wrong by hand: focus trap,
@@ -36,7 +37,7 @@ export function Dialog({
         >
           <RadixDialog.Title className="text-[15px] font-semibold">{title}</RadixDialog.Title>
           {description ? (
-            <RadixDialog.Description className="mt-1 text-[13px]" style={{ color: "var(--color-muted)" }}>
+            <RadixDialog.Description className="mt-1 text-[13px]" style={{ color: "var(--text-2)" }}>
               {description}
             </RadixDialog.Description>
           ) : (
@@ -45,8 +46,8 @@ export function Dialog({
           )}
           <div className="mt-4">{children}</div>
           {footer ? <div className="mt-5 flex justify-end gap-2">{footer}</div> : null}
-          <RadixDialog.Close className="btn btn-ghost absolute right-3 top-3 px-2 py-1" aria-label="Close">
-            ✕
+          <RadixDialog.Close className="btn btn-quiet btn-icon absolute right-3 top-3" aria-label="Close">
+            <IconClose />
           </RadixDialog.Close>
         </RadixDialog.Content>
       </RadixDialog.Portal>
