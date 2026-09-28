@@ -2,17 +2,20 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { bulkTargets, cellFor, useWorkspace } from "@/lib/workspace";
-import { StatusBadge } from "./status";
+import { StatusDot } from "./status";
 import { displayValue } from "@/lib/export/run";
 import { Menu, MenuItem, MenuSeparator } from "./ui/menu";
+import { AddColumnDialog } from "./dialogs";
+import { comparisonCsv, downloadCsv, evidenceCsv, evidenceJson, download } from "@/lib/export/run";
 import {
   IconChevronDown,
+  IconDownload,
+  IconPlus,
   IconChevronLeft,
   IconChevronRight,
   IconColumns,
   IconEdit,
   IconMore,
-  IconQuote,
   IconSearch,
   IconSparkle,
   IconSplit,
@@ -62,11 +65,11 @@ function numericValue(text: string): number | null {
 }
 
 export function ComparisonTable({
-  onOpenEvidence,
-  evidenceOpen,
+  onSelectCell,
+  onAddPapers,
 }: {
-  onOpenEvidence: () => void;
-  evidenceOpen: boolean;
+  onSelectCell: (rowId: string, columnId: string) => void;
+  onAddPapers: () => void;
 }) {
   const ws = useWorkspace();
   const [sort, setSort] = useState<SortState>(null);
@@ -78,7 +81,11 @@ export function ComparisonTable({
   const scroller = useRef<HTMLDivElement | null>(null);
 
   const running = ws.job?.stage === "extracting" || ws.job?.stage === "queued";
-  const hidden = ws.prefs.hiddenColumns?.[ws.project?.id ?? ""] ?? [];
+  const projectId = ws.project?.id ?? "";
+  const storedHidden = ws.prefs.hiddenColumns?.[projectId];
+  // First visit to a project shows Paper plus three columns. Nothing is renamed
+  // or deleted — the rest are hidden, listed in Columns, and one click away.
+  const hidden = storedHidden ?? ws.columns.slice(3).map((column) => column.id);
   const widths = ws.prefs.columnWidths ?? {};
   const visibleColumns = ws.columns.filter((column) => !hidden.includes(column.id));
   const narrow = useNarrow();
@@ -151,8 +158,20 @@ export function ComparisonTable({
     return list;
   }, [ws.rows, ws.sources, ws.columns, ws.cells, filter, statusFilter, sort]);
 
-  if (!ws.columns.length || !ws.rows.length) {
-    return <EmptyProject hasColumns={ws.columns.length > 0} hasRows={ws.rows.length > 0} />;
+  if (!ws.rows.length) {
+    return (
+      <div className="flex flex-1 items-center justify-center p-10 text-center">
+        <div className="max-w-sm">
+          <h2 className="text-[15px] font-medium">Nothing to compare yet</h2>
+          <p className="mt-1.5 text-[13px] leading-relaxed" style={{ color: "var(--text-2)" }}>
+            Add papers first; each one becomes a row here.
+          </p>
+          <button className="btn btn-primary mt-3" onClick={onAddPapers}>
+            Add papers
+          </button>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -164,6 +183,7 @@ export function ComparisonTable({
         onStatusFilter={setStatusFilter}
         hidden={hidden}
         onToggleHidden={toggleHidden}
+        onEditColumn={setEditingColumn}
         sorted={Boolean(sort)}
         onClearSort={() => setSort(null)}
         visible={visibleRows.length}
@@ -173,7 +193,13 @@ export function ComparisonTable({
       <div ref={scroller} className="scroll-area min-h-0 min-w-0 flex-1 overflow-auto">
         <table
           className="border-separate border-spacing-0 text-[14px]"
-          style={{ tableLayout: "fixed", width: paperWidth + visibleColumns.length * DATA_DEFAULT }}
+          style={{
+            tableLayout: "fixed",
+            // Never narrower than its container, so a short table does not leave a
+            // dead band of background to the right of the last column.
+            width: Math.max(paperWidth + visibleColumns.length * DATA_DEFAULT, 1),
+            minWidth: "100%",
+          }}
         >
           <colgroup>
             <col style={{ width: paperWidth }} />
@@ -208,7 +234,7 @@ export function ComparisonTable({
                   <th
                     key={column.id}
                     scope="col"
-                    className="sticky top-0 z-20 overflow-hidden border-b border-r px-2 py-1.5 text-left align-bottom"
+                    className="sticky top-0 z-20 overflow-hidden border-b px-2 py-1.5 text-left align-bottom"
                     style={{ borderColor: "var(--border)", background: "var(--surface)" }}
                   >
                     <div className="relative flex items-end justify-between gap-1">
@@ -434,7 +460,7 @@ export function ComparisonTable({
                     return (
                       <td
                         key={column.id}
-                        className="overflow-hidden border-b border-r p-0 align-top"
+                        className="overflow-hidden border-b p-0 align-top"
                         style={{ borderColor: "var(--border)" }}
                       >
                         <button
@@ -450,50 +476,52 @@ export function ComparisonTable({
                             // margin it yanks the table all the way back to the left.
                             scrollMarginLeft: narrow ? undefined : paperWidth + 8,
                           }}
-                          onClick={() => {
-                            ws.selectCell({ rowId: row.id, columnId: column.id });
-                            onOpenEvidence();
-                          }}
+                          onClick={() => onSelectCell(row.id, column.id)}
                           aria-label={`${column.label} for ${source?.title ?? "row"}: ${shown.value || "empty"}. ${status}.`}
                           aria-pressed={selected}
                         >
-                          <span className="flex items-start gap-1">
-                            <span className="line-clamp-2 min-w-0 flex-1 break-words leading-snug">
-                              {shown.value || <span style={{ color: "var(--text-3)" }}>—</span>}
+                          <span className="flex items-start gap-1.5">
+                            <span className="line-clamp-3 min-w-0 flex-1 break-words leading-snug">
+                              {shown.value || (
+                                <span style={{ color: "var(--text-3)" }}>
+                                  {status === "not_found"
+                                    ? "Not reported"
+                                    : status === "unreadable"
+                                      ? "Could not be read"
+                                      : status === "failed"
+                                        ? "Extraction failed"
+                                        : "Needs extraction"}
+                                </span>
+                              )}
                               {shown.unit && shown.value ? (
                                 <span className="ml-1 text-[12px]" style={{ color: "var(--text-2)" }}>
                                   {shown.unit}
                                 </span>
                               ) : null}
                             </span>
-                            {citations ? (
-                              <span
-                                className="mt-0.5 shrink-0"
-                                style={{ color: "var(--text-3)" }}
-                                title={`${citations} supporting passage${citations === 1 ? "" : "s"} — open to read`}
-                              >
-                                <IconQuote size={13} />
-                              </span>
-                            ) : null}
+                            <span className="mt-[3px]">
+                              <StatusDot status={status} />
+                            </span>
                           </span>
                           {shown.conditions ? (
                             <span className="mt-0.5 line-clamp-1 block text-[11.5px]" style={{ color: "var(--text-2)" }} title={shown.conditions}>
                               {shown.conditions}
                             </span>
                           ) : null}
-                          <span className="mt-1 flex flex-wrap items-center gap-1">
-                            <StatusBadge status={status} />
-                            {cell?.pendingProposal ? (
-                              <span className="badge" style={{ background: "var(--warn-weak)", color: "var(--warn)", borderColor: "transparent" }}>
-                                new answer
-                              </span>
-                            ) : null}
-                            {cell?.proposal?.partialCoverage ? (
-                              <span className="badge" title="Some pages of this document were not read for this answer.">
-                                partial read
-                              </span>
-                            ) : null}
-                          </span>
+                          {citations || cell?.pendingProposal ? (
+                            <span className="mt-1 flex items-center gap-2 text-[11.5px]" style={{ color: "var(--text-3)" }}>
+                              {citations ? (
+                                <span title={`${citations} supporting passage${citations === 1 ? "" : "s"}`}>
+                                  {citations === 1 && cell?.proposal?.evidence[0]
+                                    ? `p. ${cell.proposal.evidence[0].pageNumber}`
+                                    : `${citations} sources`}
+                                </span>
+                              ) : null}
+                              {cell?.pendingProposal ? (
+                                <span style={{ color: "var(--warn)" }}>new answer</span>
+                              ) : null}
+                            </span>
+                          ) : null}
                         </button>
                       </td>
                     );
@@ -508,9 +536,7 @@ export function ComparisonTable({
         <div aria-hidden style={{ height: 24 }} />
       </div>
 
-      {editingColumn ? (
-        <ColumnEditor column={editingColumn} onClose={() => setEditingColumn(null)} evidenceOpen={evidenceOpen} />
-      ) : null}
+      {editingColumn ? <ColumnEditor column={editingColumn} onClose={() => setEditingColumn(null)} /> : null}
     </div>
   );
 }
@@ -569,6 +595,7 @@ function Toolbar({
   onStatusFilter,
   hidden,
   onToggleHidden,
+  onEditColumn,
   sorted,
   onClearSort,
   visible,
@@ -580,85 +607,241 @@ function Toolbar({
   onStatusFilter: (value: "all" | "unreviewed" | "attention") => void;
   hidden: string[];
   onToggleHidden: (columnId: string) => void;
+  onEditColumn: (column: Column) => void;
   sorted: boolean;
   onClearSort: () => void;
   visible: number;
   total: number;
 }) {
   const ws = useWorkspace();
+  const [addColumn, setAddColumn] = useState(false);
   const density = ws.prefs.density ?? "comfortable";
+  const running = ws.job?.stage === "extracting" || ws.job?.stage === "queued";
+  const pending = bulkTargets(ws.cells, ws.rows, ws.columns);
+  const aiReady = Boolean(ws.aiStatus?.configured);
+  const project = ws.project;
+  const slug = (project?.title ?? "project").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") || "project";
+  const exportInput = project
+    ? { project, rows: ws.rows, columns: ws.columns, cells: ws.cells, sources: ws.sources }
+    : null;
+
   return (
-    <div
-      className="flex flex-wrap items-center gap-2 border-b px-3 py-2"
-      style={{ borderColor: "var(--border)", background: "var(--surface)" }}
-    >
-      <div className="relative">
-        <IconSearch size={14} className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2" style={{ color: "var(--text-3)" }} />
-        <input
-          className="field w-[15rem] pl-7"
-          placeholder="Search papers, answers"
-          value={filter}
-          onChange={(e) => onFilter(e.target.value)}
-          aria-label="Search papers and answers"
-        />
+    <>
+      <div
+        className="flex flex-wrap items-center gap-2 border-b px-4 py-2 sm:px-6"
+        style={{ borderColor: "var(--border)" }}
+      >
+        <div className="relative">
+          <IconSearch
+            size={14}
+            className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2"
+            style={{ color: "var(--text-3)" }}
+          />
+          <input
+            className="field w-[13rem] pl-7"
+            placeholder="Search papers, answers"
+            value={filter}
+            onChange={(e) => onFilter(e.target.value)}
+            aria-label="Search papers and answers"
+          />
+        </div>
+
+        <Menu
+          label="Columns"
+          trigger={
+            <button className="btn" aria-label="Columns">
+              <IconColumns size={15} />
+              <span className="hidden sm:inline">Columns</span>
+              {hidden.length ? (
+                <span className="text-[11.5px]" style={{ color: "var(--text-3)" }}>
+                  {ws.columns.length - hidden.length}/{ws.columns.length}
+                </span>
+              ) : null}
+            </button>
+          }
+        >
+          <MenuItem icon={<IconPlus />} onSelect={() => setAddColumn(true)}>
+            New column…
+          </MenuItem>
+          <MenuSeparator />
+          {ws.columns.map((column) => (
+            <MenuItem key={column.id} onSelect={() => onToggleHidden(column.id)}>
+              <span className="flex w-full items-center gap-2">
+                <input
+                  type="checkbox"
+                  readOnly
+                  checked={!hidden.includes(column.id)}
+                  aria-label={`Show ${column.label}`}
+                  tabIndex={-1}
+                />
+                <span className="min-w-0 flex-1 truncate">{column.label}</span>
+                <span
+                  role="button"
+                  tabIndex={0}
+                  className="shrink-0 text-[11.5px]"
+                  style={{ color: "var(--text-3)" }}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onEditColumn(column);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.stopPropagation();
+                      onEditColumn(column);
+                    }
+                  }}
+                >
+                  edit
+                </span>
+              </span>
+            </MenuItem>
+          ))}
+        </Menu>
+
+        <select
+          className="field w-auto"
+          value={statusFilter}
+          onChange={(e) => onStatusFilter(e.target.value as typeof statusFilter)}
+          aria-label="Filter by review state"
+        >
+          <option value="all">All rows</option>
+          <option value="unreviewed">Unreviewed answers</option>
+          <option value="attention">Needs attention</option>
+        </select>
+
+        {sorted ? (
+          <button className="btn btn-quiet" onClick={onClearSort}>
+            Clear sort
+          </button>
+        ) : null}
+
+        <div className="ml-auto flex items-center gap-2">
+          <span className="hidden text-[12px] tabular-nums sm:inline" style={{ color: "var(--text-3)" }}>
+            {visible === total ? `${total} rows` : `${visible} of ${total} rows`}
+          </span>
+
+          <Menu
+            label="More"
+            align="end"
+            trigger={
+              <button className="btn btn-quiet btn-icon" aria-label="More table actions">
+                <IconMore />
+              </button>
+            }
+          >
+            <MenuItem
+              icon={<IconDownload />}
+              disabled={!exportInput}
+              onSelect={() => exportInput && downloadCsv(`${slug}-comparison.csv`, comparisonCsv(exportInput))}
+            >
+              Export comparison (CSV)
+            </MenuItem>
+            <MenuItem
+              icon={<IconDownload />}
+              disabled={!exportInput}
+              onSelect={() => exportInput && downloadCsv(`${slug}-evidence.csv`, evidenceCsv(exportInput))}
+            >
+              Export evidence (CSV)
+            </MenuItem>
+            <MenuItem
+              icon={<IconDownload />}
+              disabled={!exportInput}
+              onSelect={() =>
+                exportInput &&
+                download(`${slug}-evidence.json`, new Blob([evidenceJson(exportInput)], { type: "application/json" }))
+              }
+            >
+              Export evidence (JSON)
+            </MenuItem>
+            <MenuSeparator />
+            <MenuItem onSelect={() => ws.setPrefs({ density: density === "compact" ? "comfortable" : "compact" })}>
+              {density === "compact" ? "Comfortable rows" : "Compact rows"}
+            </MenuItem>
+          </Menu>
+
+          <button
+            className={aiReady ? "btn btn-primary" : "btn"}
+            onClick={() => ws.extract(pending)}
+            disabled={!aiReady || running || !pending.length}
+            title={
+              !aiReady
+                ? (ws.aiStatus?.reason ?? "Automatic extraction is not configured.")
+                : !pending.length
+                  ? "Every cell already has an answer you wrote or reviewed."
+                  : `Extract ${pending.length} unanswered cell${pending.length === 1 ? "" : "s"}`
+            }
+          >
+            <IconSparkle size={15} />
+            {running ? "Extracting…" : "Extract answers"}
+          </button>
+        </div>
       </div>
 
-      <select
-        className="field w-auto"
-        value={statusFilter}
-        onChange={(e) => onStatusFilter(e.target.value as typeof statusFilter)}
-        aria-label="Filter by review state"
-      >
-        <option value="all">All rows</option>
-        <option value="unreviewed">Unreviewed answers</option>
-        <option value="attention">Needs attention</option>
-      </select>
-
-      <Menu
-        label="Column visibility"
-        trigger={
-          <button className="btn" aria-label="Show or hide columns">
-            <IconColumns size={15} />
-            <span className="hidden sm:inline">Columns</span>
-            {hidden.length ? <span className="badge">{hidden.length} hidden</span> : null}
+      {!aiReady ? (
+        <p
+          className="border-b px-4 py-1.5 text-[12px] sm:px-6"
+          style={{ borderColor: "var(--border)", background: "var(--surface-2)", color: "var(--text-2)" }}
+        >
+          {ws.aiStatus?.reason ?? "Automatic extraction is not configured."}{" "}
+          <button
+            className="font-medium underline underline-offset-2"
+            style={{ color: "var(--accent)" }}
+            onClick={() => document.dispatchEvent(new CustomEvent("paplora:settings"))}
+          >
+            Open settings
           </button>
-        }
-      >
-        {ws.columns.map((column) => (
-          <MenuItem key={column.id} onSelect={() => onToggleHidden(column.id)}>
-            <span className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                readOnly
-                checked={!hidden.includes(column.id)}
-                aria-label={`Show ${column.label}`}
-                tabIndex={-1}
-              />
-              {column.label}
-            </span>
-          </MenuItem>
-        ))}
-      </Menu>
-
-      {sorted ? (
-        <button className="btn btn-quiet" onClick={onClearSort}>
-          Clear sort
-        </button>
+        </p>
       ) : null}
 
-      <div className="ml-auto flex items-center gap-2">
-        <button
-          className="btn btn-quiet btn-sm"
-          onClick={() => ws.setPrefs({ density: density === "compact" ? "comfortable" : "compact" })}
-          title="Toggle row density"
+      {ws.job && (running || ws.job.stage === "done" || ws.job.stage === "failed") ? (
+        <div
+          className="flex flex-wrap items-center gap-2 border-b px-4 py-1.5 text-[12px] sm:px-6"
+          style={{ borderColor: "var(--border)", background: "var(--surface-2)" }}
+          role="status"
+          aria-live="polite"
         >
-          {density === "compact" ? "Comfortable rows" : "Compact rows"}
-        </button>
-        <span className="text-[12px] tabular-nums" style={{ color: "var(--text-3)" }}>
-          {visible === total ? `${total} rows` : `${visible} of ${total} rows`}
-        </span>
-      </div>
-    </div>
+          <span style={{ color: "var(--text-2)" }}>
+            {ws.job.completed + ws.job.failed} of {ws.job.total} cells
+            {ws.job.failed ? ` · ${ws.job.failed} failed` : ""}
+            {ws.job.stage === "done" ? " · finished" : ws.job.stage === "failed" ? " · stopped" : ""}
+          </span>
+          <span className="h-1 w-32 overflow-hidden rounded-full" style={{ background: "var(--surface-3)" }}>
+            <span
+              className="block h-full rounded-full transition-[width] duration-300"
+              style={{
+                width: `${Math.round(((ws.job.completed + ws.job.failed) / Math.max(ws.job.total, 1)) * 100)}%`,
+                background: "var(--accent)",
+              }}
+            />
+          </span>
+          {running ? (
+            <button className="btn btn-quiet btn-sm" onClick={ws.cancelExtraction}>
+              Cancel
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
+      {ws.resumable && !running ? (
+        <div
+          className="flex flex-wrap items-center gap-2 border-b px-4 py-1.5 text-[12.5px] sm:px-6"
+          style={{ borderColor: "var(--border)", background: "var(--warn-weak)", color: "var(--warn)" }}
+        >
+          <span>
+            An earlier run stopped with{" "}
+            {ws.resumable.targets.filter((t) => t.state === "pending" || t.state === "running").length} cells unfinished.
+          </span>
+          <button className="btn btn-sm" onClick={() => ws.resumeJob()} disabled={!aiReady}>
+            Resume
+          </button>
+          <button className="btn btn-quiet btn-sm" onClick={() => ws.dismissResumable()}>
+            Discard
+          </button>
+        </div>
+      ) : null}
+
+      <AddColumnDialog open={addColumn} onOpenChange={setAddColumn} />
+    </>
   );
 }
 
@@ -726,15 +909,7 @@ function EmptyProject({ hasColumns, hasRows }: { hasColumns: boolean; hasRows: b
   );
 }
 
-function ColumnEditor({
-  column,
-  onClose,
-  evidenceOpen,
-}: {
-  column: Column;
-  onClose: () => void;
-  evidenceOpen: boolean;
-}) {
+function ColumnEditor({ column, onClose }: { column: Column; onClose: () => void }) {
   const ws = useWorkspace();
   const [draft, setDraft] = useState<Column>(column);
   const instructionChanged = draft.instruction !== column.instruction || draft.answerType !== column.answerType;
@@ -774,7 +949,7 @@ function ColumnEditor({
           <input id="col-unit" className="field" value={draft.unit ?? ""} onChange={(e) => setDraft({ ...draft, unit: e.target.value })} />
         </div>
       </div>
-      <div className={`mt-2 ${evidenceOpen ? "" : "max-w-3xl"}`}>
+      <div className="mt-2 max-w-3xl">
         <label className="label-text" htmlFor="col-instruction">
           Extraction instruction
         </label>

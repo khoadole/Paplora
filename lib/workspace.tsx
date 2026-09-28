@@ -58,6 +58,10 @@ interface WorkspaceValue {
   versions: Record<string, DocumentVersion>;
   library: SourceDocument[];
   libraryMembership: Record<string, Project[]>;
+  /** Papers per project, for the home screen. */
+  projectPaperCount: Record<string, number>;
+  /** First lines of each paper's first page, used as an abstract preview. */
+  previews: Record<string, string>;
   selected: SelectedCell | null;
   job: ExtractionJob | null;
   resumable: ExtractionJob | null;
@@ -75,7 +79,7 @@ interface WorkspaceValue {
   openSample: () => Promise<Project | null>;
   resetSample: () => Promise<void>;
 
-  uploadFiles: (files: File[]) => Promise<UploadOutcome[]>;
+  uploadFiles: (files: File[], intoProjectId?: string) => Promise<UploadOutcome[]>;
   addFromLibrary: (sourceId: string) => Promise<void>;
   removeSource: (sourceId: string) => Promise<void>;
   deleteFromLibrary: (sourceId: string) => Promise<void>;
@@ -124,6 +128,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [versions, setVersions] = useState<Record<string, DocumentVersion>>({});
   const [library, setLibrary] = useState<SourceDocument[]>([]);
   const [libraryMembership, setLibraryMembership] = useState<Record<string, Project[]>>({});
+  const [projectPaperCount, setProjectPaperCount] = useState<Record<string, number>>({});
+  const [previews, setPreviews] = useState<Record<string, string>>({});
   const [selected, setSelected] = useState<SelectedCell | null>(null);
   const [job, setJob] = useState<ExtractionJob | null>(null);
   const [resumable, setResumable] = useState<ExtractionJob | null>(null);
@@ -145,8 +151,14 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     const all = await repo.listSources();
     setLibrary(all);
     const membership: Record<string, Project[]> = {};
-    for (const source of all) membership[source.id] = await repo.listProjectsForSource(source.id);
+    const counts: Record<string, number> = {};
+    for (const source of all) {
+      const projects = await repo.listProjectsForSource(source.id);
+      membership[source.id] = projects;
+      for (const project of projects) counts[project.id] = (counts[project.id] ?? 0) + 1;
+    }
     setLibraryMembership(membership);
+    setProjectPaperCount(counts);
   }, []);
 
   const loadProject = useCallback(async (id: string | null) => {
@@ -171,9 +183,13 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       repo.listProjectSources(id),
     ]);
     const versionMap: Record<string, DocumentVersion> = {};
+    const previewMap: Record<string, string> = {};
     for (const source of projectSources) {
       const version = await repo.getVersion(source.currentVersionId);
       if (version) versionMap[source.id] = version;
+      // A preview of what the document actually says, taken from its own first page.
+      const first = await repo.getPage(source.currentVersionId, 1);
+      if (first?.text.trim()) previewMap[source.id] = firstPagePreview(first.text, source.title);
     }
     setProject(loaded);
     setRows(projectRows);
@@ -181,6 +197,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     setCells(projectCells);
     setSources(projectSources);
     setVersions(versionMap);
+    setPreviews(previewMap);
 
     const jobs = await repo.listJobs(id);
     const unfinished = jobs
@@ -267,6 +284,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       versions,
       library,
       libraryMembership,
+      projectPaperCount,
+      previews,
       selected,
       job,
       resumable,
@@ -313,8 +332,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
           await loadLibrary();
         }),
 
-      uploadFiles: async (files) => {
-        if (!projectId) return [];
+      uploadFiles: async (files, intoProjectId) => {
+        const target = intoProjectId ?? projectId;
+        if (!target) return [];
         return withBusy("Reading PDFs…", async () => {
           const outcomes: UploadOutcome[] = files.slice(MAX_FILES_PER_BATCH).map((file) => ({
             filename: file.name,
@@ -342,7 +362,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             const hash = await sha256(bytes);
             const existing = await repo.findSourceByHash(hash);
             if (existing) {
-              await repo.addSourceToProject(projectId, existing.id);
+              await repo.addSourceToProject(target, existing.id);
               outcomes.push({
                 filename: file.name,
                 status: "reused",
@@ -356,10 +376,18 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
               contentHash: hash,
               bytes,
             });
-            await repo.addSourceToProject(projectId, source.id);
+            await repo.addSourceToProject(target, source.id);
             await repo.updateVersion(version.id, { parseStatus: "parsing" });
             const parsed = await parsePdf(bytes, version.id);
             await repo.savePages(version.id, parsed.pages);
+            // Title, author and year only when the file itself declares them.
+            if (parsed.meta?.title || parsed.meta?.authors || parsed.meta?.year) {
+              await repo.updateSource(source.id, {
+                title: parsed.meta.title || source.title,
+                authors: parsed.meta.authors,
+                year: parsed.meta.year,
+              });
+            }
             await repo.updateVersion(version.id, {
               pageCount: parsed.pageCount,
               parseStatus: parsed.status,
@@ -553,6 +581,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       versions,
       library,
       libraryMembership,
+      projectPaperCount,
+      previews,
       selected,
       job,
       resumable,
@@ -569,6 +599,23 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   );
 
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;
+}
+
+/**
+ * A readable preview of a paper's first page: start at the abstract when the
+ * document has one, and never echo the title back at the reader.
+ */
+export function firstPagePreview(text: string, title: string): string {
+  const flat = text.replace(/\s+/g, " ").trim();
+  const abstract = /\babstract\b[:.\s-]*/i.exec(flat);
+  let body = abstract ? flat.slice(abstract.index + abstract[0].length) : flat;
+  const head = title.replace(/\s+/g, " ").trim().slice(0, 40);
+  if (head.length > 12) {
+    const at = body.toLowerCase().indexOf(head.toLowerCase());
+    // The title usually reappears at the top of the page; start after it.
+    if (at >= 0 && at < 400) body = body.slice(at + head.length);
+  }
+  return body.replace(/^[\s:.\-—]+/, "").slice(0, 260);
 }
 
 export function cellFor(cells: Cell[], rowId: string, columnId: string) {

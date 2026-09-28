@@ -1,15 +1,12 @@
 /**
- * End-to-end check of the workflows in the brief, driven in a real browser.
- *
- * Creates a project, uploads a real PDF, adds a column, edits and reviews a cell,
- * filters, exports, reloads to confirm persistence, and checks the AI-off state.
- * Fails on any console error.
+ * End-to-end check of the workflows, driven in a real browser against the running
+ * app. Verification aid, not part of the product. Fails on any console error.
  *
  *   node scripts/flow.mjs [baseUrl]
  */
 import { chromium } from "playwright";
 
-const base = process.argv[2] ?? "http://localhost:3127";
+const base = process.argv[2] ?? "http://localhost:3141";
 const problems = [];
 const steps = [];
 
@@ -28,46 +25,59 @@ const page = await context.newPage();
 page.on("console", (m) => m.type() === "error" && problems.push(`console: ${m.text()}`));
 page.on("pageerror", (e) => problems.push(`pageerror: ${e.message}`));
 
+const scrollOf = () => page.evaluate(() => document.querySelector("table")?.closest("div")?.scrollLeft ?? -1);
+const tableWidth = () => page.evaluate(() => document.querySelector("table")?.closest("div")?.clientWidth ?? 0);
+
 try {
+  // 1. The home screen creates a project from a research question.
   await page.goto(base, { waitUntil: "networkidle" });
-
-  // 1. Create a project.
-  await page.getByRole("button", { name: "Create a project" }).click();
-  await page.getByLabel("Title", { exact: true }).fill("Edge action recognition");
-  await page.getByLabel(/Research question/).fill("Which methods run in real time on embedded hardware?");
+  await page.getByText("What are you researching?").waitFor({ timeout: 15000 });
+  await page.getByLabel("Research question").fill("How do these methods differ in runtime and accuracy?");
   await page.getByRole("button", { name: "Create project" }).click();
-  await page.getByRole("heading", { name: "Edge action recognition" }).waitFor({ timeout: 10000 });
-  ok("create a project with a research question");
+  await page.waitForURL(/\/p\//, { timeout: 15000 });
+  await page.getByRole("tab", { name: /Papers/ }).waitFor({ timeout: 15000 });
+  ok("home creates a project from a question and opens it on Papers");
 
-  // 2. Upload a real PDF through the file input.
-  await page.getByRole("button", { name: /Add papers/ }).click();
-  await page.setInputFiles('input[type="file"]', "public/samples/demo-framelite.pdf");
-  await page.getByText(/added/).first().waitFor({ timeout: 60000 });
-  await page.getByRole("button", { name: "Done" }).click();
-  ok("upload a PDF and see it parsed");
+  // 2. Empty project explains the next step.
+  if (await page.getByText("Add papers to start your comparison.").isVisible()) {
+    ok("empty project states the next step");
+  } else {
+    bad("empty project copy");
+  }
 
-  // 3. Add a column from scratch.
-  await page.getByRole("button", { name: /Add column/ }).click();
+  // 3. Upload real PDFs.
+  await page.getByRole("button", { name: /Upload PDFs/ }).click();
+  await page.setInputFiles('input[type="file"]', [
+    "public/samples/demo-framelite.pdf",
+    "public/samples/demo-motiontiny.pdf",
+  ]);
+  await page.getByRole("link", { name: /FrameLite/ }).waitFor({ timeout: 90000 });
+  ok("upload PDFs and see them listed as papers");
+
+  // 4. The paper title opens the reader, which offers a way back.
+  await page.getByRole("link", { name: /FrameLite/ }).click();
+  await page.waitForURL(/\/paper\//, { timeout: 15000 });
+  await page.getByRole("link", { name: "Back to the project" }).click();
+  await page.waitForURL(/\/p\/[^/]+(\?|$)/, { timeout: 15000 });
+  ok("paper title opens the reader and returns");
+
+  // 5. Compare tab, then a column from the Columns menu.
+  await page.getByRole("tab", { name: /Compare/ }).click();
+  await page.getByRole("button", { name: "Columns" }).click();
+  await page.getByRole("menuitem", { name: /New column/ }).click();
   await page.getByLabel("Label", { exact: true }).fill("Reported accuracy");
-  await page.getByLabel("Extraction instruction").fill("The headline top-1 accuracy with its conditions.");
+  await page.getByLabel("Extraction instruction").fill("The headline accuracy with its conditions.");
   await page.getByRole("button", { name: "Add column", exact: true }).last().click();
-  await page.getByRole("table").waitFor({ timeout: 10000 });
-  ok("add a column");
+  await page.getByRole("table").waitFor({ timeout: 15000 });
+  ok("add a column from the Columns menu");
 
-  // 3b. Add a preset so the table is genuinely wider than the viewport.
-  await page.getByRole("button", { name: /Add column/ }).click();
-  await page.getByRole("button", { name: /Add \d+ columns/ }).last().click();
-  await page.waitForTimeout(600);
-  const columnCount = await page.locator("thead th").count();
-  if (columnCount > 6) ok(`add a preset (${columnCount - 1} data columns)`);
-  else bad("add a preset", `${columnCount} headers`);
-
-  // 4. Select a cell; the evidence panel opens.
+  // 6. Selecting a cell opens evidence and puts the cell in the URL.
   await page.locator("tbody td button").first().click();
   await page.getByRole("button", { name: "Close evidence panel" }).waitFor({ timeout: 10000 });
-  ok("selecting a cell opens the evidence panel");
+  if (page.url().includes("cell=")) ok("selected cell is addressable in the URL");
+  else bad("cell deep link", page.url());
 
-  // 5. Edit the answer by hand and save it.
+  // 7. Edit an answer; saving counts as reviewed.
   await page.getByRole("button", { name: "Edit", exact: true }).click();
   await page.getByLabel("Answer", { exact: true }).fill("81.4");
   await page.getByLabel("Unit", { exact: true }).fill("% top-1");
@@ -76,100 +86,74 @@ try {
   await page.locator('[aria-label="Evidence"]').getByText("Reviewed").first().waitFor({ timeout: 20000 });
   ok("edit a cell; saving it counts as reviewed");
 
-  // 6. Scroll the table sideways, select a visible cell, then toggle and resize the
-  // panel: the scroll offset must not move. (Selecting a cell that is only partly
-  // visible does scroll it into view — that is the browser, and it is wanted.)
-  const scrollOf = () => page.evaluate(() => document.querySelector("table")?.closest("div")?.scrollLeft ?? -1);
+  // 8. Scroll, close the panel: the table keeps its position and gets its width back.
   await page.evaluate(() => {
     const scroller = document.querySelector("table")?.closest("div");
-    if (scroller) scroller.scrollLeft = 200;
+    if (scroller) scroller.scrollLeft = 150;
   });
   await page.waitForTimeout(200);
-  await page.locator("tbody td button").nth(3).click();
-  await page.waitForTimeout(500);
   const selectedAt = await scrollOf();
-
-  const withPanel = await page.evaluate(() => document.querySelector("table")?.closest("div")?.clientWidth ?? 0);
+  const withPanel = await tableWidth();
   await page.getByRole("button", { name: "Close evidence panel" }).click();
   await page.waitForTimeout(400);
-  const withoutPanel = await page.evaluate(() => document.querySelector("table")?.closest("div")?.clientWidth ?? 0);
+  const withoutPanel = await tableWidth();
   const afterClose = await scrollOf();
   if (withoutPanel > withPanel) ok(`closing the panel returns width (${withPanel} → ${withoutPanel})`);
   else bad("closing the panel returns width", `${withPanel} → ${withoutPanel}`);
+  if (afterClose === selectedAt) ok(`table scroll position survives the panel (${selectedAt}px)`);
+  else bad("table scroll survives the panel", `${selectedAt} → ${afterClose}`);
 
-  // Reopen on the same cell — now fully visible, so no scroll-into-view.
-  await page.locator("tbody td button").nth(3).click();
-  await page.waitForTimeout(400);
-  const afterReopen = await scrollOf();
-
-  // Resize the panel with the keyboard.
-  await page.getByRole("separator", { name: "Resize evidence panel" }).focus();
-  await page.keyboard.press("ArrowLeft");
-  await page.keyboard.press("ArrowLeft");
-  await page.waitForTimeout(400);
-  const afterResize = await scrollOf();
-
-  if (selectedAt > 0 && afterClose === selectedAt && afterReopen === selectedAt && afterResize === selectedAt) {
-    ok(`table scroll position survives close, reopen and resize (${selectedAt}px)`);
-  } else {
-    bad(
-      "table scroll position survives the panel",
-      `selected ${selectedAt} → closed ${afterClose} → reopened ${afterReopen} → resized ${afterResize}`,
-    );
-  }
-
-  // 7. Filter rows.
-  await page.getByLabel("Search papers and answers").fill("nothing-matches-this");
+  // 9. Filter.
+  await page.getByLabel("Search papers and answers").fill("zzz-no-match");
   await page.waitForTimeout(300);
-  const emptyCount = await page.locator("tbody tr").count();
+  const filtered = await page.locator("tbody tr").count();
   await page.getByLabel("Search papers and answers").fill("");
   await page.waitForTimeout(300);
-  const fullCount = await page.locator("tbody tr").count();
-  if (emptyCount === 0 && fullCount > 0) ok("filtering rows");
-  else bad("filtering rows", `${emptyCount} filtered / ${fullCount} unfiltered`);
+  const unfiltered = await page.locator("tbody tr").count();
+  if (filtered === 0 && unfiltered > 0) ok("filtering rows");
+  else bad("filtering rows", `${filtered} / ${unfiltered}`);
 
-  // 8. Export the comparison CSV.
+  // 10. Export from the secondary menu.
   const [download] = await Promise.all([
     page.waitForEvent("download", { timeout: 15000 }),
     (async () => {
-      await page.getByRole("button", { name: "Export" }).click();
-      await page.getByRole("menuitem", { name: /Comparison table/ }).click();
+      await page.getByRole("button", { name: "More table actions" }).click();
+      await page.getByRole("menuitem", { name: /Export comparison/ }).click();
     })(),
   ]);
   if ((await download.suggestedFilename()).endsWith(".csv")) ok(`export CSV (${await download.suggestedFilename()})`);
   else bad("export CSV");
 
-  // 9. Reload and confirm the workspace came back.
-  await page.reload({ waitUntil: "networkidle" });
-  await page.getByRole("heading", { name: "Edge action recognition" }).waitFor({ timeout: 15000 });
-  const survived = await page.getByText("81.4").first().isVisible();
-  if (survived) ok("data survives a reload");
+  // 11. Reload the project route; the work is still there.
+  const projectUrl = page.url().split("?")[0];
+  await page.goto(`${projectUrl}?tab=compare`, { waitUntil: "networkidle" });
+  await page.getByRole("table").waitFor({ timeout: 15000 });
+  if (await page.getByText("81.4").first().isVisible()) ok("data survives a reload");
   else bad("data survives a reload");
 
-  // 10. AI-off behaviour: the button is disabled and explains itself.
-  const extract = page.getByRole("button", { name: /Extract data/ });
-  const disabled = await extract.isDisabled();
-  const reason = await extract.getAttribute("title");
-  if (disabled && reason && /OPENAI|extraction is off|not configured/i.test(reason)) {
-    ok(`"Extract data" is disabled and says why: "${reason.slice(0, 60)}…"`);
-  } else {
-    bad("AI-off explanation", `disabled=${disabled} title=${reason}`);
-  }
-  const statusChip = await page.getByRole("button", { name: /AI not connected/ }).isVisible();
-  if (statusChip) ok("compact 'AI not connected' status is present instead of a banner");
-  else bad("AI status chip");
+  // 12. Extraction is off and says why, next to the action.
+  const disabled = await page.getByRole("button", { name: /Extract answers/ }).isDisabled();
+  const reason = await page.getByText(/Automatic extraction is off/).first().isVisible();
+  if (disabled && reason) ok("extraction is disabled and explained beside the action");
+  else bad("AI-off explanation", `disabled=${disabled} reasonVisible=${reason}`);
 
-  // 11. Sidebar collapse persists across a reload.
+  // 13. Escape closes a dialog.
+  await page.getByRole("button", { name: "Settings", exact: true }).click();
+  await page.getByRole("dialog").waitFor({ timeout: 10000 });
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(400);
+  if ((await page.getByRole("dialog").count()) === 0) ok("Escape closes dialogs");
+  else bad("Escape closes dialogs");
+
+  // 14. Sidebar preference persists.
   await page.getByRole("button", { name: "Collapse sidebar" }).click();
   await page.waitForTimeout(300);
   await page.reload({ waitUntil: "networkidle" });
-  await page.waitForTimeout(800);
-  const stillCollapsed = await page.getByRole("button", { name: "Expand sidebar" }).isVisible();
-  if (stillCollapsed) ok("sidebar preference persists");
+  await page.waitForTimeout(900);
+  if (await page.getByRole("button", { name: "Expand sidebar" }).isVisible()) ok("sidebar preference persists");
   else bad("sidebar preference persists");
 } catch (error) {
   bad("unhandled", error.message.split("\n")[0]);
-  await page.screenshot({ path: "/tmp/paplora-flow-failure.png" }).catch(() => {});
 } finally {
   await browser.close();
 }

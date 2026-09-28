@@ -8,14 +8,23 @@ import { createBackup, download, restoreBackup } from "@/lib/export/run";
 import { repo } from "@/lib/repo";
 import type { AnswerType } from "@/lib/types";
 
-export function NewProjectDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
+export function NewProjectDialog({
+  open,
+  onOpenChange,
+  onCreated,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  onCreated?: (project: { id: string }) => void;
+}) {
   const ws = useWorkspace();
   const [title, setTitle] = useState("");
   const [question, setQuestion] = useState("");
 
   const submit = async () => {
     if (!title.trim()) return;
-    await ws.createProject({ title: title.trim(), question: question.trim() });
+    const project = await ws.createProject({ title: title.trim(), question: question.trim() });
+    onCreated?.(project);
     setTitle("");
     setQuestion("");
     onOpenChange(false);

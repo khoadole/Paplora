@@ -153,7 +153,7 @@ export function PdfView({
             </span>
           ) : null}
         </div>
-        <div className="relative min-w-0 flex-1">
+        <div className="relative ml-auto min-w-0 max-w-[280px] flex-1">
           <IconSearch
             size={14}
             className="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2"
@@ -161,9 +161,9 @@ export function PdfView({
           />
           <input
             className="field w-full pl-7 text-[12px]"
-            placeholder="Find in document"
+            placeholder="Search text"
             value={query}
-            aria-label="Find in document (keyword)"
+            aria-label="Search the text of this document"
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={async (e) => {
               if (e.key !== "Enter") return;

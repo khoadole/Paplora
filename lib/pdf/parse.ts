@@ -20,6 +20,8 @@ export interface ParseResult {
   pageCount: number;
   pages: ParsedPage[];
   pagesWithText: number;
+  /** Author and year exactly as the file declares them, when it declares them. */
+  meta?: { title?: string; authors?: string; year?: number };
 }
 
 type PdfModule = typeof import("pdfjs-dist");
@@ -78,6 +80,26 @@ export async function parsePdf(bytes: ArrayBuffer, versionId: string): Promise<P
     };
   }
 
+  // The file's own Info dictionary. Absent in most PDFs, so this stays optional
+  // and nothing downstream guesses a value when it is missing.
+  let meta: ParseResult["meta"];
+  try {
+    const info = (await doc.getMetadata())?.info as
+      | { Title?: string; Author?: string; CreationDate?: string }
+      | undefined;
+    const year = /^D:(\d{4})/.exec(info?.CreationDate ?? "")?.[1];
+    const parsedYear = year ? Number(year) : undefined;
+    meta = {
+      title: info?.Title?.trim() || undefined,
+      authors: info?.Author?.trim() || undefined,
+      // Ignore the epoch default that generators write when they have no real date.
+      year: parsedYear && parsedYear > 1990 && parsedYear <= new Date().getFullYear() + 1 ? parsedYear : undefined,
+    };
+    if (!meta.title && !meta.authors && !meta.year) meta = undefined;
+  } catch {
+    meta = undefined;
+  }
+
   const pages: ParsedPage[] = [];
   for (let number = 1; number <= doc.numPages; number++) {
     const page = await doc.getPage(number);
@@ -133,6 +155,7 @@ export async function parsePdf(bytes: ArrayBuffer, versionId: string): Promise<P
   const pagesWithText = pages.filter((p) => p.text.trim().length > 0).length;
   if (pagesWithText === 0) {
     return {
+      meta,
       status: "no_text_layer",
       message:
         "No text layer found. This looks like a scanned document: you can read it here, but nothing can be extracted from it until it is run through OCR.",
@@ -143,6 +166,7 @@ export async function parsePdf(bytes: ArrayBuffer, versionId: string): Promise<P
   }
 
   return {
+    meta,
     status: "parsed",
     message:
       pagesWithText < doc.numPages

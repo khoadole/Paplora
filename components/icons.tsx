@@ -205,6 +205,19 @@ export const IconSplit = (p: IconProps) => (
   </Icon>
 );
 
+export const IconHome = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M4 10.5 12 4l8 6.5" />
+    <path d="M6 9.8V19a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V9.8" />
+  </Icon>
+);
+
+export const IconArrowLeft = (p: IconProps) => (
+  <Icon {...p}>
+    <path d="M19 12H5m0 0 6-6m-6 6 6 6" />
+  </Icon>
+);
+
 export const IconDot = (p: IconProps) => (
   <Icon {...p}>
     <circle cx="12" cy="12" r="4.5" fill="currentColor" stroke="none" />

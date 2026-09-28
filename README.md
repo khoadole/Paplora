@@ -147,11 +147,23 @@ node scripts/flow.mjs  http://localhost:3127   # 12 end-to-end workflow checks
 
 ## Interface
 
-Three areas: a collapsible navigation sidebar (232px, or 56px collapsed), the table, and an evidence panel that is **closed until you select a cell**. Closing it gives the width back to the table — verified at 1440px, where the table grows from 764px to 1208px.
+Three surfaces, each with its own address:
+
+| Route | Surface |
+|---|---|
+| `/` | Workspace home: write a research question, create a project, or reopen a recent one |
+| `/p/<id>?tab=papers` | The papers in a project, as a reading list |
+| `/p/<id>?tab=compare&cell=<row>~<col>` | The comparison table; `cell` reopens one answer's evidence |
+| `/p/<id>/paper/<sourceId>?page=N` | The full-height reader, with a way back to the tab and cell you came from |
+| `/library` | Every document this browser holds, and which projects use it |
+
+The home screen's input creates a **local project** from a question. Nothing is searched, no papers are discovered, and no answers are simulated.
+
+The project workspace has a collapsible sidebar (220px, or 56px collapsed), the tab content, and an evidence panel that is **closed until you select a cell**. Closing it gives the width back to the table — verified at 1440px, where the table grows from 764px to 1208px.
 
 The table uses `table-layout: fixed` with an explicit `<colgroup>`. That is the load-bearing decision: without it a single long answer stretches its column and pushes every other one off screen. Columns are resizable by dragging their right edge (or with the arrow keys when focused), and widths, hidden columns, sidebar state, density and theme all persist in the preferences record.
 
-Status is carried by an icon **and** a word, so the distinctions survive greyscale and colour blindness: Reviewed, Unreviewed, Ambiguous, Not reported, Unreadable, Failed, Stale. "Not reported" (the document was read; the answer is not in it) and "Unreadable" (the document could not be processed) are deliberately different states.
+In the table, status is a small **icon** with an accessible name and tooltip rather than a wordy pill repeated down every column; the full wording appears in the evidence panel. The states are Reviewed, Unreviewed, Ambiguous, Not reported, Unreadable, Failed and Stale. "Not reported" (the document was read; the answer is not in it) and "Unreadable" (the document could not be processed) are deliberately different states.
 
 Actions are ranked: **Add papers** is primary in an empty project and **Extract data** once papers are in; Add column and Export are secondary; rename, settings and delete live in an overflow menu. When extraction is unconfigured the workspace shows a small "AI not connected" chip that opens Settings — the environment-variable instructions live there, not in the middle of the work surface.
 

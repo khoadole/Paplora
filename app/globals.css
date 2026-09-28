@@ -13,10 +13,12 @@
 
 :root {
   /* Surfaces: app background is a hair off-white, content sits on white. */
-  --app: #f6f7f6;
+  /* Content is white; the sidebar is the only tinted surface. */
+  --app: #ffffff;
   --surface: #ffffff;
-  --surface-2: #f2f3f2;
-  --surface-3: #e9ebe9;
+  --surface-2: #f4f5f3;
+  --surface-3: #eaece9;
+  --sidebar: #f7f8f6;
 
   /* Text: charcoal primary, slate secondary — both meet AA on white. */
   --text: #1f2421;
@@ -65,6 +67,7 @@
     --surface: #1b1f22;
     --surface-2: #22272a;
     --surface-3: #2b3135;
+  --sidebar: #171a1d;
     --text: #e9ecea;
     --text-2: #a4aca7;
     --text-3: #7e8783;
@@ -91,6 +94,7 @@
   --surface: #1b1f22;
   --surface-2: #22272a;
   --surface-3: #2b3135;
+  --sidebar: #171a1d;
   --text: #e9ecea;
   --text-2: #a4aca7;
   --text-3: #7e8783;

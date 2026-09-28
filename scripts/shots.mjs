@@ -16,7 +16,6 @@ mkdirSync(out, { recursive: true });
 
 const VIEWPORTS = [
   { name: "1440x900", width: 1440, height: 900 },
-  { name: "1920x1080", width: 1920, height: 1080 },
   { name: "1024x768", width: 1024, height: 768 },
   { name: "390x844", width: 390, height: 844 },
 ];
@@ -40,14 +39,19 @@ try {
 
     console.log(`\n== ${viewport.name}`);
     await page.goto(base, { waitUntil: "networkidle" });
-    await page.getByRole("button", { name: /Explore sample project/i }).waitFor({ timeout: 15000 });
-    await shot(page, `${viewport.name}-01-empty`);
+    await page.getByText("What are you researching?").waitFor({ timeout: 15000 });
+    await shot(page, `${viewport.name}-01-home`);
 
     // Build the sample project: real PDFs, real parsing, real verification.
-    await page.getByRole("button", { name: /Explore sample project/i }).click();
-    await page.getByRole("table").waitFor({ timeout: 90000 });
-    await page.waitForTimeout(1200);
-    await shot(page, `${viewport.name}-02-table`);
+    await page.getByRole("button", { name: /Open sample project/i }).click();
+    await page.getByRole("tab", { name: /Papers/ }).waitFor({ timeout: 90000 });
+    await page.waitForTimeout(1500);
+    await shot(page, `${viewport.name}-02-papers`);
+
+    await page.getByRole("tab", { name: /Compare/ }).click();
+    await page.getByRole("table").waitFor({ timeout: 30000 });
+    await page.waitForTimeout(800);
+    await shot(page, `${viewport.name}-03-compare`);
 
     // How many comparison columns are actually visible without scrolling?
     const metrics = await page.evaluate(() => {
@@ -77,7 +81,7 @@ try {
     const cells = page.locator("tbody td button");
     await cells.first().click();
     await page.waitForTimeout(900);
-    await shot(page, `${viewport.name}-03-evidence`);
+    await shot(page, `${viewport.name}-04-evidence`);
 
     // Close it and confirm the table takes the width back.
     const widthWithPanel = await page.evaluate(() => document.querySelector("table")?.closest("div")?.clientWidth ?? 0);
@@ -89,7 +93,7 @@ try {
     if (viewport.width >= 1024 && widthWithoutPanel <= widthWithPanel) {
       errors.push(`[${viewport.name}] closing the panel did not give width back (${widthWithPanel} → ${widthWithoutPanel})`);
     }
-    await shot(page, `${viewport.name}-04-closed`);
+    await shot(page, `${viewport.name}-05-closed`);
 
     if (viewport.width >= 1440) {
       // Review flow: open a cell, mark it reviewed, confirm the badge changes.
@@ -100,15 +104,22 @@ try {
         await review.click();
         await page.waitForTimeout(700);
       }
-      await shot(page, `${viewport.name}-05-reviewed`);
+      await shot(page, `${viewport.name}-06-reviewed`);
 
       // Settings, where the AI configuration explanation lives.
       await page.keyboard.press("Escape");
       await page.getByRole("button", { name: /Close evidence panel/i }).click();
       await page.getByRole("button", { name: "Settings", exact: true }).click();
       await page.waitForTimeout(500);
-      await shot(page, `${viewport.name}-06-settings`);
+      await shot(page, `${viewport.name}-07-settings`);
       await page.keyboard.press("Escape");
+
+      // The reader, reached from a paper title.
+      await page.getByRole("tab", { name: /Papers/ }).click();
+      await page.waitForTimeout(400);
+      await page.locator("a[href*='/paper/']").first().click();
+      await page.waitForTimeout(1500);
+      await shot(page, `${viewport.name}-08-reader`);
     }
 
     await context.close();

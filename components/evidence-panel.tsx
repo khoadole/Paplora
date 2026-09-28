@@ -5,13 +5,14 @@ import { cellFor, useWorkspace } from "@/lib/workspace";
 import { STATUS_TEXT, StatusBadge } from "./status";
 import { PdfView } from "./pdf-view";
 import { displayValue, rowLabel } from "@/lib/export/run";
+import Link from "next/link";
+import { useParams, useSearchParams } from "next/navigation";
 import { Menu, MenuItem } from "./ui/menu";
 import {
   IconChevronLeft,
   IconChevronRight,
   IconCheck,
   IconClose,
-  IconCollapse,
   IconEdit,
   IconExpand,
   IconFlag,
@@ -26,16 +27,10 @@ import {
  * document takes the rest of the height, because reading the passage is the job.
  * Nothing here marks a cell reviewed on its own — that requires the user to act.
  */
-export function EvidencePanel({
-  onClose,
-  onExpandDocument,
-  expanded,
-}: {
-  onClose?: () => void;
-  onExpandDocument?: () => void;
-  expanded?: boolean;
-}) {
+export function EvidencePanel({ onClose }: { onClose?: () => void }) {
   const ws = useWorkspace();
+  const params = useParams<{ projectId: string }>();
+  const search = useSearchParams();
   const [pageNumber, setPageNumber] = useState(1);
   const [activeSpan, setActiveSpan] = useState(0);
   const [draft, setDraft] = useState<{ value: string; unit: string; conditions: string } | null>(null);
@@ -88,14 +83,14 @@ export function EvidencePanel({
             {rowLabel(row, source)}
           </p>
         </div>
-        <button
+        <Link
           className="btn btn-quiet btn-icon"
-          onClick={onExpandDocument}
-          aria-label={expanded ? "Exit full-screen document" : "Expand document"}
-          title={expanded ? "Exit full-screen document" : "Expand document"}
+          href={`/p/${params.projectId}/paper/${row.sourceId}?page=${span?.pageNumber ?? 1}&tab=compare&cell=${search.get("cell") ?? ""}`}
+          aria-label="Open in paper"
+          title="Open this paper in the reader"
         >
-          {expanded ? <IconCollapse /> : <IconExpand />}
-        </button>
+          <IconExpand />
+        </Link>
         <button className="btn btn-quiet btn-icon" onClick={onClose} aria-label="Close evidence panel" title="Close">
           <IconClose />
         </button>
@@ -171,7 +166,7 @@ export function EvidencePanel({
                   </span>
                 ) : null}
               </p>
-              <StatusBadge status={status} />
+              <StatusBadge status={status} title={`${STATUS_TEXT[status].label} — ${STATUS_TEXT[status].help}`} />
             </div>
 
             {shown.conditions ? (
@@ -184,9 +179,6 @@ export function EvidencePanel({
                 {cell.proposal.note}
               </p>
             ) : null}
-            <p className="mt-1 text-[12px]" style={{ color: "var(--text-3)" }}>
-              {STATUS_TEXT[status].help}
-            </p>
             {answeredBy ? (
               <p className="mt-0.5 text-[11.5px]" style={{ color: "var(--text-3)" }}>
                 Answered by {answeredBy}
@@ -372,8 +364,12 @@ export function EvidencePanel({
             ) : null}
           </>
         )}
-        <p className="mt-1.5 text-[11px]" style={{ color: "var(--text-3)" }}>
-          A quote proves the text is in the document — not that it supports the answer. That is what your review is for.
+        <p
+          className="mt-1.5 text-[11px]"
+          style={{ color: "var(--text-3)" }}
+          title="Paplora verifies that each quote exists in the document. Whether the quote supports the answer is a judgement only you can make."
+        >
+          A quote shows the text exists, not that it supports the answer.
         </p>
       </section>
 

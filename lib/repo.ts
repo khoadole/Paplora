@@ -37,7 +37,7 @@ export interface Repository {
     contentHash: string;
     bytes: ArrayBuffer;
   }): Promise<{ source: SourceDocument; version: DocumentVersion }>;
-  updateSource(id: Id, patch: Partial<Pick<SourceDocument, "title">>): Promise<void>;
+  updateSource(id: Id, patch: Partial<Pick<SourceDocument, "title" | "authors" | "year">>): Promise<void>;
   deleteSource(id: Id): Promise<void>;
   getVersion(id: Id): Promise<DocumentVersion | undefined>;
   updateVersion(id: Id, patch: Partial<DocumentVersion>): Promise<void>;
@@ -205,7 +205,7 @@ export class IndexedDBRepository implements Repository {
     return { source, version };
   }
 
-  async updateSource(id: Id, patch: Partial<Pick<SourceDocument, "title">>) {
+  async updateSource(id: Id, patch: Partial<Pick<SourceDocument, "title" | "authors" | "year">>) {
     const db = await this.db();
     const existing = await db.get("sources", id);
     if (!existing) return;

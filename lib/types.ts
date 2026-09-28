@@ -18,6 +18,9 @@ export interface SourceDocument {
   id: Id;
   title: string;
   filename: string;
+  /** Only ever set from the PDF's own metadata. Never inferred, never invented. */
+  authors?: string;
+  year?: number;
   /** SHA-256 of the original bytes. Byte-identical uploads reuse the same source. */
   contentHash: string;
   byteSize: number;
@@ -223,4 +226,6 @@ export interface Preferences {
   columnWidths?: Record<Id, number>;
   /** Column ids hidden from the table, keyed by project id. */
   hiddenColumns?: Record<Id, Id[]>;
+  /** Which tab a project was last left on. */
+  lastTab?: Record<Id, "papers" | "compare">;
 }

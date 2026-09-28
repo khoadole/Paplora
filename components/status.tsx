@@ -66,6 +66,41 @@ const ICON: Record<CellStatus, ReactNode> = {
   stale: <IconRetry size={11} />,
 };
 
+/**
+ * The in-cell indicator: a small shape, never a wordy pill repeated down every
+ * column. The state is carried by colour AND shape AND an accessible name, and
+ * the full wording appears in the evidence panel.
+ */
+export function StatusDot({ status }: { status: CellStatus }) {
+  const meta = STATUS_TEXT[status];
+  const tone = TONE[meta.tone];
+  if (status === "empty" || status === "reviewed") {
+    // Reviewed is the resting state and needs no mark; empty has nothing to mark.
+    return status === "reviewed" ? (
+      <span
+        className="inline-flex shrink-0 items-center"
+        style={{ color: tone.fg }}
+        title={meta.help}
+        aria-label={`Status: ${meta.label}. ${meta.help}`}
+        tabIndex={0}
+      >
+        <IconCheck size={12} />
+      </span>
+    ) : null;
+  }
+  return (
+    <span
+      className="inline-flex shrink-0 items-center"
+      style={{ color: tone.fg }}
+      title={`${meta.label} — ${meta.help}`}
+      aria-label={`Status: ${meta.label}. ${meta.help}`}
+      tabIndex={0}
+    >
+      {ICON[status]}
+    </span>
+  );
+}
+
 export function StatusBadge({ status, title }: { status: CellStatus; title?: string }) {
   const meta = STATUS_TEXT[status];
   const tone = TONE[meta.tone];

@@ -1,11 +1,6 @@
-import { WorkspaceProvider } from "@/lib/workspace";
-import { WorkspaceView } from "@/components/workspace-view";
+import { HomeView } from "@/components/home-view";
 
-/** The root route is the workspace itself. There is no marketing page to get past. */
+/** The root route is the workspace home, not a landing page. */
 export default function Page() {
-  return (
-    <WorkspaceProvider>
-      <WorkspaceView />
-    </WorkspaceProvider>
-  );
+  return <HomeView />;
 }
