@@ -54,6 +54,14 @@ try {
   await page.getByRole("table").waitFor({ timeout: 10000 });
   ok("add a column");
 
+  // 3b. Add a preset so the table is genuinely wider than the viewport.
+  await page.getByRole("button", { name: /Add column/ }).click();
+  await page.getByRole("button", { name: /Add \d+ columns/ }).last().click();
+  await page.waitForTimeout(600);
+  const columnCount = await page.locator("thead th").count();
+  if (columnCount > 6) ok(`add a preset (${columnCount - 1} data columns)`);
+  else bad("add a preset", `${columnCount} headers`);
+
   // 4. Select a cell; the evidence panel opens.
   await page.locator("tbody td button").first().click();
   await page.getByRole("button", { name: "Close evidence panel" }).waitFor({ timeout: 10000 });
@@ -68,13 +76,47 @@ try {
   await page.locator('[aria-label="Evidence"]').getByText("Reviewed").first().waitFor({ timeout: 20000 });
   ok("edit a cell; saving it counts as reviewed");
 
-  // 6. Close the panel and confirm the table takes the width back.
+  // 6. Scroll the table sideways, select a visible cell, then toggle and resize the
+  // panel: the scroll offset must not move. (Selecting a cell that is only partly
+  // visible does scroll it into view — that is the browser, and it is wanted.)
+  const scrollOf = () => page.evaluate(() => document.querySelector("table")?.closest("div")?.scrollLeft ?? -1);
+  await page.evaluate(() => {
+    const scroller = document.querySelector("table")?.closest("div");
+    if (scroller) scroller.scrollLeft = 200;
+  });
+  await page.waitForTimeout(200);
+  await page.locator("tbody td button").nth(3).click();
+  await page.waitForTimeout(500);
+  const selectedAt = await scrollOf();
+
   const withPanel = await page.evaluate(() => document.querySelector("table")?.closest("div")?.clientWidth ?? 0);
   await page.getByRole("button", { name: "Close evidence panel" }).click();
   await page.waitForTimeout(400);
   const withoutPanel = await page.evaluate(() => document.querySelector("table")?.closest("div")?.clientWidth ?? 0);
+  const afterClose = await scrollOf();
   if (withoutPanel > withPanel) ok(`closing the panel returns width (${withPanel} → ${withoutPanel})`);
   else bad("closing the panel returns width", `${withPanel} → ${withoutPanel}`);
+
+  // Reopen on the same cell — now fully visible, so no scroll-into-view.
+  await page.locator("tbody td button").nth(3).click();
+  await page.waitForTimeout(400);
+  const afterReopen = await scrollOf();
+
+  // Resize the panel with the keyboard.
+  await page.getByRole("separator", { name: "Resize evidence panel" }).focus();
+  await page.keyboard.press("ArrowLeft");
+  await page.keyboard.press("ArrowLeft");
+  await page.waitForTimeout(400);
+  const afterResize = await scrollOf();
+
+  if (selectedAt > 0 && afterClose === selectedAt && afterReopen === selectedAt && afterResize === selectedAt) {
+    ok(`table scroll position survives close, reopen and resize (${selectedAt}px)`);
+  } else {
+    bad(
+      "table scroll position survives the panel",
+      `selected ${selectedAt} → closed ${afterClose} → reopened ${afterReopen} → resized ${afterResize}`,
+    );
+  }
 
   // 7. Filter rows.
   await page.getByLabel("Search papers and answers").fill("nothing-matches-this");

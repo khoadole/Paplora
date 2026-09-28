@@ -13,7 +13,7 @@ Requires **Node 18.18+** and npm.
 ```bash
 npm install
 cp .env.example .env.local    # optional; the app runs fine with it empty
-npm run dev                   # http://localhost:3000
+npm run dev                   # http://localhost:3000, or the next free port — the terminal says which
 ```
 
 The root URL **is** the workspace. There is no landing page, no sign-up and no onboarding questionnaire to get past.

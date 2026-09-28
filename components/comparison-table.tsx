@@ -445,6 +445,10 @@ export function ComparisonTable({
                             paddingBottom: "var(--cell-pad-y)",
                             background: selected ? "var(--accent-weak)" : undefined,
                             boxShadow: selected ? "inset 0 0 0 2px var(--accent)" : undefined,
+                            // Focusing a cell that sits partly under the frozen paper
+                            // column makes the browser scroll it into view; without this
+                            // margin it yanks the table all the way back to the left.
+                            scrollMarginLeft: narrow ? undefined : paperWidth + 8,
                           }}
                           onClick={() => {
                             ws.selectCell({ rowId: row.id, columnId: column.id });
