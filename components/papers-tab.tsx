@@ -7,6 +7,8 @@ import { useWorkspace } from "@/lib/workspace";
 import { Menu, MenuItem, MenuSeparator } from "./ui/menu";
 import { IconAlert, IconMore, IconRetry, IconTrash, IconUpload } from "./icons";
 import { MAX_FILES_PER_BATCH, MAX_FILE_BYTES } from "@/lib/workspace";
+import { DiscoveryList } from "./discovery-list";
+import { RefineInput } from "./refine-input";
 
 /**
  * The papers list: a reading surface, not a grid.
@@ -36,6 +38,17 @@ export function PapersTab({ onAddPapers, onCompare }: { onAddPapers: () => void;
   };
 
   if (!ws.sources.length) {
+    // Discovery may still be running or may have returned candidates to choose from.
+    if (ws.candidates.length || ws.researching || ws.researchError) {
+      return (
+        <div className="scroll-area min-h-0 flex-1 overflow-y-auto">
+          <DiscoveryList onCompare={onCompare} />
+          <div className="w-full max-w-[900px] px-4 pb-6 sm:px-6">
+            <RefineInput onCompare={onCompare} />
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="flex flex-1 items-center justify-center p-6">
         <div
@@ -89,6 +102,7 @@ export function PapersTab({ onAddPapers, onCompare }: { onAddPapers: () => void;
 
   return (
     <div className="scroll-area min-h-0 flex-1 overflow-y-auto">
+      <DiscoveryList onCompare={onCompare} />
       <div className="w-full max-w-[900px] px-4 py-4 sm:px-6">
         <div className="flex items-center justify-between gap-2 pb-1">
           <p className="text-[12.5px]" style={{ color: "var(--text-3)" }}>
@@ -156,10 +170,27 @@ export function PapersTab({ onAddPapers, onCompare }: { onAddPapers: () => void;
                     >
                       {source.title}
                     </Link>
-                    <p className="mt-0.5 text-[12.5px]" style={{ color: "var(--text-2)" }}>
-                      {[source.authors, source.year ? String(source.year) : null].filter(Boolean).join(" · ") ||
-                        source.filename}
-                      {version?.pageCount ? ` · ${version.pageCount} pages` : ""}
+                    <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px]" style={{ color: "var(--text-2)" }}>
+                      <span>
+                        {[source.authors, source.year ? String(source.year) : null, source.venue]
+                          .filter(Boolean)
+                          .join(" · ") || source.filename}
+                      </span>
+                      {version?.pageCount ? (
+                        <span>
+                          {version.pageCount} {source.kind === "web" && !source.filename.endsWith(".pdf") ? "sections" : "pages"}
+                        </span>
+                      ) : null}
+                      {source.coverage && source.coverage !== "fulltext" ? (
+                        <span className="badge" style={{ color: "var(--warn)" }} title="Only part of this paper could be read.">
+                          {source.coverage === "abstract" ? "abstract only" : "metadata only"}
+                        </span>
+                      ) : null}
+                      {source.url ? (
+                        <a className="underline underline-offset-2" href={source.url} target="_blank" rel="noreferrer noopener">
+                          source
+                        </a>
+                      ) : null}
                     </p>
                     {preview ? (
                       <p className="mt-1 line-clamp-2 text-[13px] leading-snug" style={{ color: "var(--text-2)" }}>
@@ -211,6 +242,8 @@ export function PapersTab({ onAddPapers, onCompare }: { onAddPapers: () => void;
           <IconUpload size={15} />
           Add papers
         </button>
+
+        <RefineInput onCompare={onCompare} />
       </div>
     </div>
   );

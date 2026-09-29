@@ -1,4 +1,4 @@
-import type { CellStatus, EvidenceSpan, Proposal } from "../types";
+import type { CellStatus, Coverage, EvidenceSpan, Proposal } from "../types";
 import { resolveEvidence, type PageLike } from "./match";
 import type { ModelAnswer } from "./schema";
 
@@ -30,6 +30,11 @@ export interface VerifyContext {
   partialCoverage: boolean;
   /** True when the document produced no usable text at all. */
   noTextLayer: boolean;
+  /**
+   * What was actually readable. With anything short of full text, "not found"
+   * can only mean "not in what was reviewed" — never "the paper does not report it".
+   */
+  coverage?: Coverage;
   model: string;
   schemaVersion: number;
   now?: number;
@@ -53,6 +58,7 @@ export function verifyAnswer(answer: ModelAnswer, ctx: VerifyContext): VerifiedA
       start: resolved.start,
       end: resolved.end,
       location: resolved.location,
+      sectionLabel: resolved.sectionLabel,
     });
   }
 
@@ -65,6 +71,7 @@ export function verifyAnswer(answer: ModelAnswer, ctx: VerifyContext): VerifiedA
     createdAt: at,
     pagesConsidered: ctx.consideredPages,
     partialCoverage: ctx.partialCoverage,
+    coverage: ctx.coverage ?? "fulltext",
   };
 
   if (ctx.noTextLayer) {
@@ -77,13 +84,17 @@ export function verifyAnswer(answer: ModelAnswer, ctx: VerifyContext): VerifiedA
   }
 
   if (answer.outcome === "not_found") {
+    // Only a full-text review can support "the paper does not report this".
+    const readEverything = (ctx.coverage ?? "fulltext") === "fulltext" && !ctx.partialCoverage;
     return {
-      status: "not_found",
+      status: readEverything ? "not_found" : "not_in_reviewed_content",
       rejectedQuotes: rejected,
       proposal: { ...base, value: "", evidence: spans },
-      message: ctx.partialCoverage
-        ? "Not found in the pages that were read. Some pages were not sent."
-        : undefined,
+      message: readEverything
+        ? undefined
+        : ctx.coverage === "abstract"
+          ? "Only the abstract was available, so this is absent from what was reviewed — not necessarily from the paper."
+          : "Not found in the content that was reviewed. Some of the document was not read.",
     };
   }
 

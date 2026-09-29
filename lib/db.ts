@@ -8,12 +8,13 @@ import type {
   Preferences,
   Project,
   ProjectSource,
+  PaperCandidate,
   Row,
   SourceDocument,
 } from "./types";
 
 export const DB_NAME = "paplora";
-export const DB_VERSION = 1;
+export const DB_VERSION = 2;
 
 export interface PaploraSchema extends DBSchema {
   projects: { key: string; value: Project };
@@ -35,6 +36,7 @@ export interface PaploraSchema extends DBSchema {
     indexes: { projectId: string; rowId: string; columnId: string };
   };
   jobs: { key: string; value: ExtractionJob; indexes: { projectId: string } };
+  candidates: { key: string; value: PaperCandidate; indexes: { projectId: string } };
   preferences: { key: string; value: Preferences };
 }
 
@@ -45,7 +47,15 @@ let cached: Promise<PaploraDB> | null = null;
 export function getDB(): Promise<PaploraDB> {
   if (!cached) {
     cached = openDB<PaploraSchema>(DB_NAME, DB_VERSION, {
-      upgrade(db) {
+      // Upgrades only ever add: existing workspaces keep their data.
+      upgrade(db, oldVersion) {
+        if (oldVersion >= 1) {
+          if (!db.objectStoreNames.contains("candidates")) {
+            const candidates = db.createObjectStore("candidates", { keyPath: "id" });
+            candidates.createIndex("projectId", "projectId");
+          }
+          return;
+        }
         db.createObjectStore("projects", { keyPath: "id" });
 
         const sources = db.createObjectStore("sources", { keyPath: "id" });
@@ -79,6 +89,9 @@ export function getDB(): Promise<PaploraDB> {
 
         const jobs = db.createObjectStore("jobs", { keyPath: "id" });
         jobs.createIndex("projectId", "projectId");
+
+        const candidates = db.createObjectStore("candidates", { keyPath: "id" });
+        candidates.createIndex("projectId", "projectId");
 
         db.createObjectStore("preferences", { keyPath: "id" });
       },

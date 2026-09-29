@@ -163,7 +163,10 @@ async function runUnit(input: {
   const { ctx, row, column, pages, signal } = input;
   const version = await ctx.repo.getVersion(row.versionId);
   const source = await ctx.repo.getSource(row.sourceId);
-  const plan = planExtraction(pages.map((p) => ({ pageNumber: p.pageNumber, text: p.text })));
+  const plan = planExtraction(
+    pages.map((p) => ({ pageNumber: p.pageNumber, text: p.text, label: p.label })),
+  );
+  const coverage = source?.coverage ?? "fulltext";
   const noTextLayer = plan.windows.length === 0;
 
   if (noTextLayer) {
@@ -173,6 +176,7 @@ async function runUnit(input: {
       consideredPages: [],
       partialCoverage: true,
       noTextLayer: true,
+      coverage,
       model: "none",
       schemaVersion: column.schemaVersion,
     });
@@ -206,6 +210,7 @@ async function runUnit(input: {
       consideredPages: plan.consideredPages,
       partialCoverage: plan.partialCoverage,
       noTextLayer: false,
+      coverage,
       model: answer.model,
       schemaVersion: column.schemaVersion,
     });

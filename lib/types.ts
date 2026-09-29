@@ -11,13 +11,64 @@ export interface Project {
   question: string;
   createdAt: number;
   updatedAt: number;
+  /** The model's reading of the request, shown to the user as editable text. */
+  interpretedScope?: string;
+  constraints?: string[];
+  /** Short overview written from the retrieved results. */
+  overview?: string;
+  /** Cumulative token usage for this session. */
+  usage?: { input: number; output: number; calls: number };
+}
+
+/**
+ * A paper found by discovery but not yet imported into the comparison.
+ * A candidate exists only if search returned a real URL for it.
+ */
+export interface PaperCandidate {
+  id: Id;
+  projectId: Id;
+  title: string;
+  url: string;
+  /** One line on why this result matches the request, from the search step. */
+  why?: string;
+  /** Description grounded in retrieved content, never invented. */
+  description?: string;
+  authors?: string;
+  year?: number;
+  venue?: string;
+  doi?: string;
+  arxivId?: string;
+  pdfUrl?: string;
+  codeUrl?: string;
+  metadataSource?: "openalex" | "search";
+  coverage: Coverage;
+  /** Set once the candidate has been imported as a source document. */
+  importedSourceId?: Id;
+  createdAt: number;
 }
 
 /** A source document is the paper; a version is one immutable upload of its bytes. */
+/** How much of a paper Paplora has actually read. Never what a provider promises. */
+export type Coverage = "metadata" | "abstract" | "fulltext";
+
 export interface SourceDocument {
   id: Id;
   title: string;
   filename: string;
+  /** "upload" for a user's PDF, "web" for a paper fetched from a URL. */
+  kind?: "upload" | "web";
+  /** Canonical page for the paper, when it came from discovery. */
+  url?: string;
+  doi?: string;
+  arxivId?: string;
+  venue?: string;
+  abstract?: string;
+  /** Repository link, only when an inspected source stated one. */
+  codeUrl?: string;
+  /** Where the bibliographic fields came from. Never the model. */
+  metadataSource?: "openalex" | "crossref" | "pdf" | "user";
+  /** What has been read: metadata only until content is actually fetched. */
+  coverage?: Coverage;
   /** Only ever set from the PDF's own metadata. Never inferred, never invented. */
   authors?: string;
   year?: number;
@@ -52,7 +103,10 @@ export interface DocumentVersion {
 export interface ParsedPage {
   id: Id; // `${versionId}:${pageNumber}`
   versionId: Id;
+  /** PDF page index (1-based), or section index for an HTML source. Not a printed page number. */
   pageNumber: number;
+  /** Section heading, when the unit is a section rather than a PDF page. */
+  label?: string;
   text: string;
   width: number;
   height: number;
@@ -113,7 +167,8 @@ export type CellStatus =
   | "extracted" // AI proposed, not yet reviewed
   | "reviewed" // a human approved or wrote the value
   | "flagged" // a human marked it wrong
-  | "not_found" // searched the processed text, genuinely absent
+  | "not_found" // full text was reviewed and genuinely does not contain it
+  | "not_in_reviewed_content" // absent from what was reviewed, but the full text was not read
   | "unreadable" // the relevant content could not be read (no text layer, unprocessed pages)
   | "ambiguous" // several conflicting candidates
   | "failed"
@@ -135,6 +190,10 @@ export interface Proposal {
   pagesConsidered: number[];
   /** True when some pages of the document were not sent (bounded requests). */
   partialCoverage: boolean;
+  /** What was actually available to read when this answer was produced. */
+  coverage?: Coverage;
+  /** Model-reported token usage, for the session's usage record. */
+  usage?: { input: number; output: number };
 }
 
 export interface Cell {
@@ -164,7 +223,7 @@ export interface CellRevision {
   value?: string;
 }
 
-export type EvidenceLocation = "span" | "page";
+export type EvidenceLocation = "span" | "section" | "page";
 
 export interface EvidenceSpan {
   versionId: Id;
@@ -175,10 +234,13 @@ export interface EvidenceSpan {
   start?: number;
   end?: number;
   /**
-   * "span" — the quote was found in the page text and can be highlighted.
-   * "page" — the quote could not be located exactly; only the page is known.
+   * "span" — the quote was found and can be highlighted.
+   * "section" — located within a named section of a web source.
+   * "page" — the quote could not be placed exactly; only the unit is known.
    */
   location: EvidenceLocation;
+  /** Heading of the section the quote sits in, for web sources. */
+  sectionLabel?: string;
 }
 
 export type JobStage =

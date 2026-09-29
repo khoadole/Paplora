@@ -11,6 +11,7 @@ import type {
   ParsedPage,
   Preferences,
   Project,
+  PaperCandidate,
   Proposal,
   Row,
   SourceDocument,
@@ -25,19 +26,23 @@ export interface Repository {
   listProjects(): Promise<Project[]>;
   getProject(id: Id): Promise<Project | undefined>;
   createProject(input: { title: string; question?: string; kind?: Project["kind"] }): Promise<Project>;
-  updateProject(id: Id, patch: Partial<Pick<Project, "title" | "question">>): Promise<void>;
+  updateProject(id: Id, patch: Partial<Omit<Project, "id" | "createdAt">>): Promise<void>;
   deleteProject(id: Id): Promise<void>;
 
   listSources(): Promise<SourceDocument[]>;
   getSource(id: Id): Promise<SourceDocument | undefined>;
   findSourceByHash(hash: string): Promise<SourceDocument | undefined>;
-  createSource(input: {
-    title: string;
-    filename: string;
-    contentHash: string;
-    bytes: ArrayBuffer;
-  }): Promise<{ source: SourceDocument; version: DocumentVersion }>;
-  updateSource(id: Id, patch: Partial<Pick<SourceDocument, "title" | "authors" | "year">>): Promise<void>;
+  createSource(
+    input: {
+      title: string;
+      filename: string;
+      contentHash: string;
+      bytes: ArrayBuffer;
+    } & Partial<Pick<SourceDocument, "kind" | "url" | "doi" | "arxivId" | "venue" | "abstract" | "codeUrl" | "authors" | "year" | "metadataSource" | "coverage">>,
+  ): Promise<{ source: SourceDocument; version: DocumentVersion }>;
+  /** Finds an existing document by DOI, arXiv id or canonical URL. */
+  findSourceByIdentity(identity: { doi?: string; arxivId?: string; url?: string }): Promise<SourceDocument | undefined>;
+  updateSource(id: Id, patch: Partial<SourceDocument>): Promise<void>;
   deleteSource(id: Id): Promise<void>;
   getVersion(id: Id): Promise<DocumentVersion | undefined>;
   updateVersion(id: Id, patch: Partial<DocumentVersion>): Promise<void>;
@@ -74,6 +79,11 @@ export interface Repository {
   applyProposal(projectId: Id, rowId: Id, columnId: Id, proposal: Proposal, status: CellStatus): Promise<Cell>;
   acceptPendingProposal(rowId: Id, columnId: Id): Promise<Cell | undefined>;
   dismissPendingProposal(rowId: Id, columnId: Id): Promise<Cell | undefined>;
+
+  listCandidates(projectId: Id): Promise<PaperCandidate[]>;
+  saveCandidates(projectId: Id, candidates: Omit<PaperCandidate, "id" | "projectId" | "createdAt">[]): Promise<PaperCandidate[]>;
+  updateCandidate(id: Id, patch: Partial<PaperCandidate>): Promise<void>;
+  clearCandidates(projectId: Id): Promise<void>;
 
   listJobs(projectId: Id): Promise<ExtractionJob[]>;
   saveJob(job: ExtractionJob): Promise<void>;
@@ -129,7 +139,7 @@ export class IndexedDBRepository implements Repository {
     return project;
   }
 
-  async updateProject(id: Id, patch: Partial<Pick<Project, "title" | "question">>) {
+  async updateProject(id: Id, patch: Partial<Omit<Project, "id" | "createdAt">>) {
     const db = await this.db();
     const existing = await db.get("projects", id);
     if (!existing) return;
@@ -171,12 +181,29 @@ export class IndexedDBRepository implements Repository {
     return (await this.db()).getFromIndex("sources", "contentHash", hash);
   }
 
-  async createSource(input: {
-    title: string;
-    filename: string;
-    contentHash: string;
-    bytes: ArrayBuffer;
-  }) {
+  /**
+   * A paper already in the library is never stored twice: identity is its DOI,
+   * then its arXiv id, then its canonical URL, then the bytes' hash.
+   */
+  async findSourceByIdentity(identity: { doi?: string; arxivId?: string; url?: string }) {
+    const all = await this.listSources();
+    const url = identity.url?.toLowerCase();
+    return all.find(
+      (source) =>
+        (identity.doi && source.doi && source.doi.toLowerCase() === identity.doi.toLowerCase()) ||
+        (identity.arxivId && source.arxivId === identity.arxivId) ||
+        (url && source.url?.toLowerCase() === url),
+    );
+  }
+
+  async createSource(
+    input: {
+      title: string;
+      filename: string;
+      contentHash: string;
+      bytes: ArrayBuffer;
+    } & Partial<Pick<SourceDocument, "kind" | "url" | "doi" | "arxivId" | "venue" | "abstract" | "codeUrl" | "authors" | "year" | "metadataSource" | "coverage">>,
+  ) {
     const db = await this.db();
     const sourceId = newId("src");
     const versionId = newId("ver");
@@ -196,6 +223,17 @@ export class IndexedDBRepository implements Repository {
       byteSize: input.bytes.byteLength,
       createdAt: now(),
       currentVersionId: versionId,
+      kind: input.kind ?? "upload",
+      url: input.url,
+      doi: input.doi,
+      arxivId: input.arxivId,
+      venue: input.venue,
+      abstract: input.abstract,
+      codeUrl: input.codeUrl,
+      authors: input.authors,
+      year: input.year,
+      metadataSource: input.metadataSource,
+      coverage: input.coverage ?? "metadata",
     };
     const tx = db.transaction(["sources", "versions", "blobs"], "readwrite");
     await tx.objectStore("sources").put(source);
@@ -205,7 +243,7 @@ export class IndexedDBRepository implements Repository {
     return { source, version };
   }
 
-  async updateSource(id: Id, patch: Partial<Pick<SourceDocument, "title" | "authors" | "year">>) {
+  async updateSource(id: Id, patch: Partial<SourceDocument>) {
     const db = await this.db();
     const existing = await db.get("sources", id);
     if (!existing) return;
@@ -572,6 +610,53 @@ export class IndexedDBRepository implements Repository {
     const updated: Cell = { ...cell, pendingProposal: undefined, updatedAt: now() };
     await db.put("cells", updated);
     return updated;
+  }
+
+  // -- discovery candidates -------------------------------------------------
+
+  async listCandidates(projectId: Id) {
+    const all = await (await this.db()).getAllFromIndex("candidates", "projectId", projectId);
+    return all.sort((a, b) => a.createdAt - b.createdAt);
+  }
+
+  /** Saves a discovery run's results, skipping papers the session already has. */
+  async saveCandidates(
+    projectId: Id,
+    candidates: Omit<PaperCandidate, "id" | "projectId" | "createdAt">[],
+  ) {
+    const db = await this.db();
+    const existing = await this.listCandidates(projectId);
+    const seen = new Set(existing.map((c) => c.doi || c.arxivId || c.url.toLowerCase()));
+    const created: PaperCandidate[] = [];
+    for (const candidate of candidates) {
+      const key = candidate.doi || candidate.arxivId || candidate.url.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const record: PaperCandidate = {
+        ...candidate,
+        id: newId("cnd"),
+        projectId,
+        createdAt: now() + created.length,
+      };
+      await db.put("candidates", record);
+      created.push(record);
+    }
+    return created;
+  }
+
+  async updateCandidate(id: Id, patch: Partial<PaperCandidate>) {
+    const db = await this.db();
+    const existing = await db.get("candidates", id);
+    if (!existing) return;
+    await db.put("candidates", { ...existing, ...patch });
+  }
+
+  async clearCandidates(projectId: Id) {
+    const db = await this.db();
+    const keys = await db.getAllKeysFromIndex("candidates", "projectId", projectId);
+    const tx = db.transaction("candidates", "readwrite");
+    for (const key of keys) await tx.store.delete(key);
+    await tx.done;
   }
 
   // -- jobs and preferences ------------------------------------------------

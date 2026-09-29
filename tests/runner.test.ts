@@ -61,6 +61,7 @@ async function scaffold() {
     filename: "demo.pdf",
     contentHash: `h${counter}`,
     bytes: new TextEncoder().encode("%PDF-1.4").buffer as ArrayBuffer,
+    coverage: "fulltext",
   });
   await repo.savePages(
     version.id,
@@ -293,6 +294,64 @@ test("re-extraction over a reviewed cell parks the proposal instead of overwriti
   assert.equal(cell?.userValue, "81.4 (checked by hand)");
   assert.equal(cell?.status, "reviewed");
   assert.equal(cell?.pendingProposal?.value, "81.4");
+});
+
+test("an abstract-only paper never reports that the paper omits something", async () => {
+  const { repo, project, row, column, versionId } = await scaffold();
+  // Only the abstract could be retrieved for this paper.
+  const source = (await repo.listSources())[0];
+  await repo.updateSource(source.id, { coverage: "abstract" });
+  await repo.savePages(versionId, [
+    {
+      id: `${versionId}:1`,
+      versionId,
+      pageNumber: 1,
+      label: "Abstract",
+      text: "We present a method for streaming recognition. Accuracy is discussed in the full paper.",
+      width: 0,
+      height: 0,
+      items: [],
+    },
+  ]);
+  await repo.updateVersion(versionId, { pageCount: 1, pagesWithText: 1, parseStatus: "parsed" });
+
+  const { impl } = fakeFetch([answer({ outcome: "not_found", note: "not in the abstract" })]);
+  const run = await startExtraction({
+    repo,
+    projectId: project.id,
+    question: "",
+    rows: [row],
+    columns: [column],
+    targets: [{ rowId: row.id, columnId: column.id }],
+    onUpdate: () => {},
+    fetchImpl: impl,
+  });
+  await run.done;
+
+  const cell = await repo.getCell(row.id, column.id);
+  assert.equal(
+    cell?.status,
+    "not_in_reviewed_content",
+    "an abstract-only read must not be presented as a completed full-text review",
+  );
+  assert.equal(cell?.proposal?.coverage, "abstract");
+});
+
+test("a full-text paper can report that the paper does not mention something", async () => {
+  const { repo, project, row, column } = await scaffold();
+  const { impl } = fakeFetch([answer({ outcome: "not_found", note: "no latency reported" })]);
+  const run = await startExtraction({
+    repo,
+    projectId: project.id,
+    question: "",
+    rows: [row],
+    columns: [column],
+    targets: [{ rowId: row.id, columnId: column.id }],
+    onUpdate: () => {},
+    fetchImpl: impl,
+  });
+  await run.done;
+  assert.equal((await repo.getCell(row.id, column.id))?.status, "not_found");
 });
 
 test("a document with no text layer is reported as unreadable without calling the model", async () => {

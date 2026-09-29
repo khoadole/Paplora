@@ -93,7 +93,6 @@ export function CompareTab({ onAddPapers }: { onAddPapers: () => void }) {
           <aside
             className="hidden shrink-0 lg:block"
             style={{ width: panelWidth, background: "var(--surface)" }}
-            aria-label="Evidence"
           >
             <EvidencePanel onClose={close} />
           </aside>

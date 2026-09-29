@@ -24,8 +24,13 @@ export const STATUS_TEXT: Record<CellStatus, { label: string; help: string; tone
   flagged: { label: "Flagged", help: "You marked this as wrong or suspect.", tone: "bad" },
   not_found: {
     label: "Not reported",
-    help: "The pages that were read do not answer this. The document was readable; the answer is not in it.",
+    help: "The full text was reviewed and does not report this.",
     tone: "neutral",
+  },
+  not_in_reviewed_content: {
+    label: "Not in reviewed content",
+    help: "Absent from the part of the paper that was read. The full text was not available, so the paper may still report it.",
+    tone: "warn",
   },
   unreadable: {
     label: "Unreadable",
@@ -60,6 +65,7 @@ const ICON: Record<CellStatus, ReactNode> = {
   reviewed: <IconCheck size={11} />,
   flagged: <IconFlag size={11} />,
   not_found: <IconDot size={9} />,
+  not_in_reviewed_content: <IconQuestion size={11} />,
   unreadable: <IconAlert size={11} />,
   ambiguous: <IconQuestion size={11} />,
   failed: <IconAlert size={11} />,

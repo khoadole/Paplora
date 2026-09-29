@@ -14,10 +14,12 @@ import { repo } from "./repo";
 import { parsePdf, looksLikePdf } from "./pdf/parse";
 import { sha256 } from "./ids";
 import { resumeExtraction, startExtraction, type RunHandle } from "./runner";
+import { importCandidate, runDiscovery, type ProgressEvent } from "./research";
 import { createSampleProject, resetSampleProject } from "./sample/create";
 import type {
   Cell,
   Column,
+  PaperCandidate,
   DocumentVersion,
   ExtractionJob,
   Preferences,
@@ -62,6 +64,12 @@ interface WorkspaceValue {
   projectPaperCount: Record<string, number>;
   /** First lines of each paper's first page, used as an abstract preview. */
   previews: Record<string, string>;
+  /** Papers found by discovery but not yet imported. */
+  candidates: PaperCandidate[];
+  /** Live progress of the current research run, from real steps. */
+  progress: ProgressEvent[];
+  researching: boolean;
+  researchError: string | null;
   selected: SelectedCell | null;
   job: ExtractionJob | null;
   resumable: ExtractionJob | null;
@@ -100,6 +108,12 @@ interface WorkspaceValue {
   editRowLabel: (rowId: string, label: string) => Promise<void>;
   removeRow: (rowId: string) => Promise<void>;
 
+  /** Runs discovery for a session, saving the candidates it resolves. */
+  research: (projectId: string, question: string) => Promise<void>;
+  cancelResearch: () => void;
+  importCandidates: (ids: string[]) => Promise<{ imported: number; messages: string[] }>;
+  suggestColumns: () => Promise<number>;
+
   extract: (targets: SelectedCell[]) => Promise<void>;
   cancelExtraction: () => void;
   resumeJob: () => Promise<void>;
@@ -130,6 +144,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [libraryMembership, setLibraryMembership] = useState<Record<string, Project[]>>({});
   const [projectPaperCount, setProjectPaperCount] = useState<Record<string, number>>({});
   const [previews, setPreviews] = useState<Record<string, string>>({});
+  const [candidates, setCandidates] = useState<PaperCandidate[]>([]);
+  const [progress, setProgress] = useState<ProgressEvent[]>([]);
+  const [researching, setResearching] = useState(false);
+  const [researchError, setResearchError] = useState<string | null>(null);
+  const research = useRef<AbortController | null>(null);
   const [selected, setSelected] = useState<SelectedCell | null>(null);
   const [job, setJob] = useState<ExtractionJob | null>(null);
   const [resumable, setResumable] = useState<ExtractionJob | null>(null);
@@ -198,6 +217,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     setSources(projectSources);
     setVersions(versionMap);
     setPreviews(previewMap);
+
+    setCandidates(await repo.listCandidates(id));
 
     const jobs = await repo.listJobs(id);
     const unfinished = jobs
@@ -286,6 +307,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       libraryMembership,
       projectPaperCount,
       previews,
+      candidates,
+      progress,
+      researching,
+      researchError,
       selected,
       job,
       resumable,
@@ -393,6 +418,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
               parseStatus: parsed.status,
               parseMessage: parsed.message,
               pagesWithText: parsed.pagesWithText,
+            });
+            await repo.updateSource(source.id, {
+              coverage: parsed.pagesWithText > 0 ? "fulltext" : "metadata",
             });
             outcomes.push({
               filename: file.name,
@@ -510,6 +538,111 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         await loadProject(projectId);
       },
 
+      research: async (targetProjectId, question) => {
+        const controller = new AbortController();
+        research.current = controller;
+        setResearching(true);
+        setResearchError(null);
+        setProgress([{ type: "start", message: "Starting" }]);
+        try {
+          const result = await runDiscovery(question, {
+            signal: controller.signal,
+            onEvent: (event) => setProgress((current) => [...current.slice(-6), event]),
+          });
+          await repo.saveCandidates(targetProjectId, result.papers);
+          const project = await repo.getProject(targetProjectId);
+          // The interpreted topic makes a better session title than the raw question.
+          const autoTitle =
+            project && result.scope.topic && project.title.length > 40 && project.question.startsWith(project.title.slice(0, 30))
+              ? result.scope.topic.slice(0, 70)
+              : undefined;
+          await repo.updateProject(targetProjectId, {
+            ...(autoTitle ? { title: autoTitle } : {}),
+            interpretedScope: result.scope.topic,
+            constraints: result.scope.constraints,
+            overview: result.overview,
+            usage: {
+              input: (project?.usage?.input ?? 0) + result.usage.input,
+              output: (project?.usage?.output ?? 0) + result.usage.output,
+              calls: (project?.usage?.calls ?? 0) + result.usage.calls,
+            },
+          });
+          setProgress((current) => [
+            ...current.slice(-6),
+            { type: "done", message: `${result.papers.length} papers found` },
+          ]);
+          await loadProject(targetProjectId);
+          setProjects(await repo.listProjects());
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Research failed.";
+          setResearchError(controller.signal.aborted ? "Research cancelled." : message);
+        } finally {
+          setResearching(false);
+          research.current = null;
+        }
+      },
+      cancelResearch: () => {
+        research.current?.abort();
+        research.current = null;
+      },
+      importCandidates: async (ids) => {
+        if (!projectId) return { imported: 0, messages: [] };
+        return withBusy("Reading papers…", async () => {
+          const messages: string[] = [];
+          let imported = 0;
+          const all = await repo.listCandidates(projectId);
+          for (const id of ids) {
+            const candidate = all.find((c) => c.id === id);
+            if (!candidate) continue;
+            setProgress((current) => [
+              ...current.slice(-6),
+              { type: "reading", message: `Reading ${candidate.title.slice(0, 48)}` },
+            ]);
+            try {
+              const outcome = await importCandidate(repo, projectId, candidate);
+              if (outcome.sourceId) imported += 1;
+              if (outcome.message) messages.push(`${candidate.title.slice(0, 48)}: ${outcome.message}`);
+            } catch (error) {
+              // One paper failing must not lose the others.
+              messages.push(
+                `${candidate.title.slice(0, 48)}: ${error instanceof Error ? error.message : "could not be imported"}`,
+              );
+            }
+          }
+          await refresh();
+          return { imported, messages };
+        });
+      },
+      suggestColumns: async () => {
+        if (!projectId || !project) return 0;
+        return withBusy("Suggesting comparison criteria…", async () => {
+          const existing = (await repo.listColumns(projectId)).map((c) => c.label);
+          const response = await fetch("/api/research/columns", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ question: project.question || project.title, existing }),
+          });
+          if (!response.ok) {
+            const payload = (await response.json().catch(() => ({}))) as { error?: string };
+            throw new Error(payload.error ?? "Could not suggest criteria.");
+          }
+          const payload = (await response.json()) as {
+            columns: { label: string; instruction: string; answerType: Column["answerType"]; unit?: string }[];
+          };
+          for (const column of payload.columns) {
+            await repo.createColumn({
+              projectId,
+              label: column.label,
+              instruction: column.instruction,
+              answerType: column.answerType,
+              unit: column.unit || undefined,
+            });
+          }
+          await loadProject(projectId);
+          return payload.columns.length;
+        });
+      },
+
       extract: async (targets) => {
         if (!projectId || !project || !targets.length) return;
         const run = await startExtraction({
@@ -583,6 +716,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       libraryMembership,
       projectPaperCount,
       previews,
+      candidates,
+      progress,
+      researching,
+      researchError,
       selected,
       job,
       resumable,

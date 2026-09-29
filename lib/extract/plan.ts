@@ -10,6 +10,8 @@
 export interface PlanPage {
   pageNumber: number;
   text: string;
+  /** Section heading, for web sources split by heading rather than page. */
+  label?: string;
 }
 
 export interface Window {
@@ -59,7 +61,7 @@ export function planExtraction(
   for (const page of withText) {
     const text = page.text.length > maxChars ? page.text.slice(0, maxChars) : page.text;
     if (current.length >= maxPages || (size > 0 && size + text.length > maxChars)) flush();
-    current.push({ pageNumber: page.pageNumber, text });
+    current.push({ pageNumber: page.pageNumber, text, label: page.label });
     size += text.length;
   }
   flush();

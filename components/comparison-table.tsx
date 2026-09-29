@@ -79,6 +79,44 @@ export function ComparisonTable({
   const [rowMenuFor, setRowMenuFor] = useState<string | null>(null);
   const [splitLabel, setSplitLabel] = useState("");
   const scroller = useRef<HTMLDivElement | null>(null);
+  const [summary, setSummary] = useState<string | null>(null);
+
+  /** Summarises from stored answers only; the model never sees the papers here. */
+  const summarise = async () => {
+    if (!ws.project) return;
+    setSummary("Summarising…");
+    const payload = {
+      question: ws.project.question,
+      rows: ws.rows.slice(0, 20).map((row) => {
+        const source = ws.sources.find((s) => s.id === row.sourceId);
+        return {
+          paper: source?.title ?? "Untitled",
+          coverage: source?.coverage ?? "fulltext",
+          cells: ws.columns.slice(0, 20).map((column) => {
+            const cell = cellFor(ws.cells, row.id, column.id);
+            const shown = displayValue(cell);
+            return {
+              column: column.label,
+              value: shown.value,
+              conditions: shown.conditions ?? "",
+              status: cell?.status ?? "empty",
+            };
+          }),
+        };
+      }),
+    };
+    try {
+      const response = await fetch("/api/research/summary", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = (await response.json()) as { summary?: string; error?: string };
+      setSummary(data.summary || data.error || "No summary was returned.");
+    } catch {
+      setSummary("The summary request failed.");
+    }
+  };
 
   const running = ws.job?.stage === "extracting" || ws.job?.stage === "queued";
   const projectId = ws.project?.id ?? "";
@@ -188,7 +226,27 @@ export function ComparisonTable({
         onClearSort={() => setSort(null)}
         visible={visibleRows.length}
         total={ws.rows.length}
+        onSummarise={summarise}
       />
+
+      {summary ? (
+        <div
+          className="border-b px-4 py-3 text-[13.5px] leading-relaxed sm:px-6"
+          style={{ borderColor: "var(--border)", background: "var(--surface-2)" }}
+        >
+          <div className="flex items-start justify-between gap-3">
+            <p className="max-w-3xl" style={{ color: "var(--text)" }}>
+              {summary}
+            </p>
+            <button className="btn btn-quiet btn-sm shrink-0" onClick={() => setSummary(null)}>
+              Hide
+            </button>
+          </div>
+          <p className="mt-1.5 text-[11.5px]" style={{ color: "var(--text-3)" }}>
+            Written from the stored answers in this table, not from the papers.
+          </p>
+        </div>
+      ) : null}
 
       <div ref={scroller} className="scroll-area min-h-0 min-w-0 flex-1 overflow-auto">
         <table
@@ -600,6 +658,7 @@ function Toolbar({
   onClearSort,
   visible,
   total,
+  onSummarise,
 }: {
   filter: string;
   onFilter: (value: string) => void;
@@ -612,6 +671,7 @@ function Toolbar({
   onClearSort: () => void;
   visible: number;
   total: number;
+  onSummarise: () => void;
 }) {
   const ws = useWorkspace();
   const [addColumn, setAddColumn] = useState(false);
@@ -752,6 +812,10 @@ function Toolbar({
               }
             >
               Export evidence (JSON)
+            </MenuItem>
+            <MenuSeparator />
+            <MenuItem icon={<IconSparkle />} disabled={!ws.aiStatus?.configured} onSelect={onSummarise}>
+              Summarise comparison
             </MenuItem>
             <MenuSeparator />
             <MenuItem onSelect={() => ws.setPrefs({ density: density === "compact" ? "comfortable" : "compact" })}>

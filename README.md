@@ -20,7 +20,7 @@ The root URL **is** the workspace. There is no landing page, no sign-up and no o
 
 ```bash
 npm run typecheck   # tsc --noEmit
-npm test            # 53 tests, node:test + tsx, no network and no keys needed
+npm test            # 64 tests, node:test + tsx, no network and no keys needed
 npm run build       # production build
 npm run samples     # regenerate the demo PDFs in public/samples/
 ```
@@ -37,22 +37,49 @@ npm run samples     # regenerate the demo PDFs in public/samples/
 
 ---
 
-## Live extraction, and the model name
+## AI configuration
 
-Set both in `.env.local`:
+Set both in `.env` (or `.env.local`):
 
 ```
 OPENAI_API_KEY=sk-...
 OPENAI_MODEL=<a model your account can call>
 ```
 
-Model precedence: `OPENAI_MODEL`, then `OPENAI_LESSON_MODEL` (a compatibility alias from an earlier project of the owner's), then **nothing**.
+Model precedence: `OPENAI_MODEL`, then `OPENAI_LESSON_MODEL`, then **nothing**. There is deliberately no default: an unverified model name would misreport what produced your answers.
 
-**There is deliberately no default model.** The requested default, `gpt-5.6-terra`, was checked against OpenAI's published model list on 2026-09-27 (`developers.openai.com/api/docs/models`) and **is not a model the API offers** — the nearest name there is `gpt-5.6-cyber`, a security-research model. Rather than silently substitute something else and let the app misreport what produced an answer, live extraction stays off until a model is named explicitly. Pick one your account actually has; if the provider rejects it, the error says so instead of failing vaguely.
+**Discovery needs the Responses API `web_search` tool.** OpenAI's published model page lists web search only for the GPT-6 models, but the configured `gpt-4o-mini` **does** run it on this account — verified by a live call that returned a `web_search_call` item with URL citations. If your model cannot search, discovery still works: it falls back to searching the OpenAlex index directly, and the interface says so.
 
-The key is read on the server only. It is never sent to the browser, never stored in client storage, and never written into a prompt or a log.
+The key is read on the server only. It never reaches the browser, is never written into a prompt, and is never logged.
 
----
+**This sends data off the device.** The local workspace stores everything in your browser, but running research sends your question to OpenAI, and extraction sends the pages of the papers you selected. Uploading and reading PDFs, manual cells and export all still work with no key at all.
+
+**Cost.** One discovery run is two model calls plus index lookups (a few cents on a small model). Extraction is roughly one call per cell. Each session records its own token usage.
+
+## How discovery stays grounded
+
+The model proposes; a scholarly index decides.
+
+1. The request is restated as a topic and a list of constraints, shown to you as editable text.
+2. The model searches the web and returns paper **titles** — not URLs, authors or years.
+3. Every title is looked up in OpenAlex. **A paper that does not resolve never reaches the interface.** Authors, year, venue, DOI and the open-access PDF link all come from that record.
+4. If the model finds few resolvable papers, the index itself is searched to top up.
+
+This is not theoretical. Asked for JSON, the model returned URLs with no search citations attached, one of which was a plausible-looking arXiv id that does not exist. Resolving titles against an index is what makes a fabricated paper disappear instead of being displayed.
+
+A search citation is evidence that a page exists. It is not evidence for any claim in the paper, and it does not mean the paper was read.
+
+## What "read" means
+
+Coverage is set by what was actually fetched, never by what a provider promises:
+
+- **metadata** — only the record; nothing was read.
+- **abstract** — only the abstract could be retrieved.
+- **fulltext** — the PDF or the article page was fetched and parsed.
+
+This matters for one specific honesty problem: with anything short of full text, "the paper does not report this" is unsupportable. Those cells read **Not in reviewed content**, not "Not reported". Only a full-text read can produce "Not reported".
+
+PDFs are parsed in the browser by the same code path as an upload, so page numbering and stored bytes are identical, and the reader works offline afterwards. Article pages are split by heading, and evidence there points at a **section**, not a page. A PDF page index is not the printed page number, and the interface does not pretend otherwise.
 
 ## How an answer becomes trustworthy
 
@@ -123,7 +150,7 @@ app/api/ai-status     truthful configuration status, never the key
 
 ## Verification status
 
-**53 tests pass** (`npm test`), covering: quote matching through ligatures and line wrapping; rejection of fabricated and too-short quotes; page fallback when the model miscounts; every verification outcome; bounded page windows and coverage reporting; model precedence and the no-silent-default rule; request shape, schema violations, truncated responses, provider error classification and cancellation in the live adapter; CSV quoting and formula injection; backup manifest validation and ZIP entry filtering; persistence across handles; shared-source deletion semantics in both directions; project isolation; stale marking that spares user edits; runner sequencing, retry, cancellation, resume, and the no-text-layer path; a full backup round trip (project, split row, reviewed answer, evidence quote and PDF bytes all survive); and that every sample fixture quote really exists in its demo PDF.
+**64 tests pass** (`npm test`), covering: quote matching through ligatures and line wrapping; rejection of fabricated and too-short quotes; page fallback when the model miscounts; every verification outcome; bounded page windows and coverage reporting; model precedence and the no-silent-default rule; request shape, schema violations, truncated responses, provider error classification and cancellation in the live adapter; CSV quoting and formula injection; backup manifest validation and ZIP entry filtering; persistence across handles; shared-source deletion semantics in both directions; project isolation; stale marking that spares user edits; runner sequencing, retry, cancellation, resume, and the no-text-layer path; a full backup round trip (project, split row, reviewed answer, evidence quote and PDF bytes all survive); that every sample fixture quote really exists in its demo PDF; that an abstract-only read is never presented as a completed full-text review; that the same DOI arriving from two URLs produces one document and one row; that discovery results are not saved twice; that evidence from a web source resolves to its section; that titles match only when they really are the same paper; and that the source fetcher refuses loopback, link-local, private and credentialed URLs.
 
 `npm run typecheck` and `npm run build` both pass. The built app was started and checked over HTTP: the workspace route, the AI-status endpoint, the PDF worker, the sample PDFs and the extract endpoint's unconfigured response all behave correctly.
 

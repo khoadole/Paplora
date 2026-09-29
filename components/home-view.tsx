@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 import Link from "next/link";
 import { useWorkspace } from "@/lib/workspace";
-import { IconPlus, IconUpload } from "./icons";
+import { IconPlus, IconSearch, IconUpload } from "./icons";
 
 /**
  * The workspace home.
@@ -13,6 +13,13 @@ import { IconPlus, IconUpload } from "./icons";
  * box: nothing is queried, no papers are discovered, no answers are simulated.
  * The next step is always "add your papers".
  */
+/** Clickable starting points, spanning disciplines rather than one field. */
+const EXAMPLES = [
+  "Find action recognition methods suitable for edge devices. Prioritize realtime inference and available code.",
+  "Compare recent randomised trials of behavioural interventions for adolescent sleep quality.",
+  "How do studies of soil carbon sequestration differ in measurement method and reported effect size?",
+];
+
 export function HomeView() {
   const ws = useWorkspace();
   const router = useRouter();
@@ -28,14 +35,20 @@ export function HomeView() {
       .replace(/^(how|what|which|why|when|where)\s+(do|does|did|are|is|was|were|can|should)\b\s*/i, "")
       .replace(/^(how|what|which|why|do|does|are|is|can|should)\b\s*/i, "");
     const trimmed = (short || clean).replace(/[?.,;:]+\s*$/, "");
-    return (trimmed.charAt(0).toUpperCase() + trimmed.slice(1)).slice(0, 70);
+    const title = trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+    // Cut at a word boundary rather than mid-word; discovery renames it anyway.
+    if (title.length <= 70) return title;
+    return `${title.slice(0, 67).replace(/\s+\S*$/, "")}…`;
   };
 
-  const create = async (openFilePicker: boolean) => {
+  /** Creates the session, then starts discovery inside it. */
+  const startResearch = async () => {
+    if (question.trim().length < 8) return;
     setWorking(true);
     try {
       const project = await ws.createProject({ title: titleFromQuestion(question), question: question.trim() });
-      router.push(`/p/${project.id}${openFilePicker ? "?add=1" : ""}`);
+      router.push(`/p/${project.id}?tab=papers`);
+      void ws.research(project.id, question.trim());
     } finally {
       setWorking(false);
     }
@@ -64,25 +77,73 @@ export function HomeView() {
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) create(false);
+              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) startResearch();
             }}
           />
           <div className="flex flex-wrap items-center justify-between gap-2 px-1 pb-0.5 pt-1">
             <p className="text-[12px]" style={{ color: "var(--text-3)" }}>
-              Creates a project on this device. Nothing is searched or sent anywhere.
+              Research searches the web and a paper index. Your question and the papers you choose are sent to OpenAI.
             </p>
             <div className="flex items-center gap-1.5">
               <button className="btn" onClick={() => fileRef.current?.click()} disabled={working}>
                 <IconUpload size={15} />
                 Upload papers
               </button>
-              <button className="btn btn-primary" onClick={() => create(false)} disabled={working}>
-                <IconPlus size={15} />
-                Create project
+              <button
+                className="btn btn-primary"
+                onClick={startResearch}
+                disabled={working || question.trim().length < 8 || !ws.aiStatus?.configured}
+                title={
+                  ws.aiStatus?.configured
+                    ? "Search for papers and start a session"
+                    : (ws.aiStatus?.reason ?? "AI is not configured.")
+                }
+              >
+                <IconSearch size={15} />
+                Research
               </button>
             </div>
           </div>
         </div>
+
+        <div className="mt-3 flex flex-wrap items-center gap-1.5">
+          {EXAMPLES.map((example) => (
+            <button
+              key={example}
+              className="badge"
+              style={{ cursor: "pointer" }}
+              onClick={() => setQuestion(example)}
+              title="Use this question"
+            >
+              {example.length > 62 ? `${example.slice(0, 62)}…` : example}
+            </button>
+          ))}
+          <button
+            className="text-[12px]"
+            style={{ color: "var(--text-3)" }}
+            onClick={async () => {
+              setWorking(true);
+              try {
+                const project = await ws.createProject({
+                  title: titleFromQuestion(question),
+                  question: question.trim(),
+                });
+                router.push(`/p/${project.id}?tab=papers`);
+              } finally {
+                setWorking(false);
+              }
+            }}
+            disabled={working}
+          >
+            <IconPlus size={12} /> Empty project instead
+          </button>
+        </div>
+
+        {!ws.aiStatus?.configured && ws.aiStatus?.reason ? (
+          <p className="mt-2 text-[12px]" style={{ color: "var(--text-2)" }}>
+            {ws.aiStatus.reason} You can still upload PDFs and compare them by hand.
+          </p>
+        ) : null}
 
         {/* Choosing files first still creates the project, then carries the files in. */}
         <input

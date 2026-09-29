@@ -121,12 +121,15 @@ export interface ResolvedSpan {
   quote: string;
   start?: number;
   end?: number;
-  location: "span" | "page";
+  location: "span" | "section" | "page";
+  sectionLabel?: string;
 }
 
 export interface PageLike {
   pageNumber: number;
   text: string;
+  /** Section heading for web sources; absent for PDF pages. */
+  label?: string;
 }
 
 /**
@@ -152,7 +155,9 @@ export function resolveEvidence(
         quote: hit.text,
         start: hit.start,
         end: hit.end,
-        location: "span",
+        // A web section has no coordinates to highlight, only a heading.
+        location: page.label ? "section" : "span",
+        sectionLabel: page.label,
       };
     }
   }
