@@ -575,6 +575,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
             interpretedScope: result.scope.topic,
             constraints: result.scope.constraints,
             overview: result.overview,
+            clarify: result.scope.ambiguity
+              ? { question: result.scope.ambiguity, options: result.scope.ambiguityOptions ?? [] }
+              : undefined,
             usage: {
               input: (project?.usage?.input ?? 0) + result.usage.input,
               output: (project?.usage?.output ?? 0) + result.usage.output,

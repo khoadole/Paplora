@@ -29,6 +29,19 @@ export const scopeSchema = z.object({
   topic: z.string().min(1).max(300),
   constraints: z.array(z.string().max(120)).max(8).default([]),
   searchQuery: z.string().min(1).max(300),
+  /**
+   * Specific things the request names — a model, a method, a dataset — with the
+   * acronym spelled out. "compare stgcn vs ctrgcn" is a request for two known
+   * papers, and looking those names up directly is far better than a topic search.
+   */
+  namedWorks: z.array(z.string().max(160)).max(6).default([]),
+  /**
+   * Set only when the same name means different things in different fields, and
+   * the choice would change which papers are right. Guessing silently is how
+   * "STGCN" returned traffic-forecasting papers for a skeleton-action question.
+   */
+  ambiguity: z.string().max(200).default(""),
+  ambiguityOptions: z.array(z.string().max(80)).max(3).default([]),
 });
 
 const proposalSchema = z.object({
@@ -100,8 +113,14 @@ export async function interpretRequest(question: string, options: CallOptions = 
       input: [
         {
           role: "system",
-          content:
-            'Restate a research request as a search topic and a list of hard constraints. Reply with JSON only: {"topic":string,"constraints":string[],"searchQuery":string}.',
+          content: `Restate a research request as a search topic and hard constraints.
+
+If the request names specific models, methods, systems or datasets (often as acronyms), list each in "namedWorks" with the acronym expanded — for example "CTR-GCN" becomes "Channel-wise Topology Refinement Graph Convolution". Include the field when the acronym is ambiguous across fields.
+"searchQuery" is the subject only: no words like compare, versus, papers or recent.
+
+If a name in the request means different things in different fields — STGCN is a traffic-forecasting model and also a skeleton-based action recognition model — set "ambiguity" to a one-line question asking which field is meant, and "ambiguityOptions" to the two or three fields. Leave both empty when the request is clear.
+
+Reply with JSON only: {"topic":string,"constraints":string[],"searchQuery":string,"namedWorks":string[],"ambiguity":string,"ambiguityOptions":string[]}.`,
         },
         { role: "user", content: question.slice(0, 2000) },
       ],
@@ -113,6 +132,9 @@ export async function interpretRequest(question: string, options: CallOptions = 
     topic: question.slice(0, 200),
     constraints: [],
     searchQuery: question.slice(0, 200),
+    namedWorks: [],
+    ambiguity: "",
+    ambiguityOptions: [],
   };
   return { scope, usage: result.usage };
 }
@@ -186,6 +208,21 @@ Then reply with JSON only:
     return true;
   };
 
+  // A request that names specific works is a known-item search: look those up
+  // first, so "compare X vs Y" returns X and Y rather than whatever a topic
+  // search happens to rank highly.
+  if (interpreted.scope.namedWorks.length) {
+    options.onEvent?.({
+      type: "checking_sources",
+      message: `Looking up ${interpreted.scope.namedWorks.length} named method${interpreted.scope.namedWorks.length === 1 ? "" : "s"}`,
+    });
+    for (const name of interpreted.scope.namedWorks) {
+      if (kept.length >= MAX_CANDIDATES) break;
+      const record = await lookupWork({ title: name }, options.signal);
+      if (record) push(record, { why: `Named in your request (${name}).` });
+    }
+  }
+
   options.onEvent?.({ type: "checking_sources", message: `Checking ${parsed.papers.length} results against the paper index` });
   for (const proposal of parsed.papers) {
     if (kept.length >= MAX_CANDIDATES) break;
@@ -207,11 +244,13 @@ Then reply with JSON only:
     });
   }
 
-  // Top up from the index itself when the model found few resolvable papers.
-  if (kept.length < 5) {
+  // Top up from the index only when the run is genuinely thin. The topic carries
+  // the field ("skeleton-based action recognition"); the bare search query may be
+  // two acronyms, which match the wrong discipline entirely.
+  if (kept.length < 4) {
     options.onEvent?.({ type: "searching", message: "Searching the paper index" });
     const extra = await searchWorks(
-      interpreted.scope.searchQuery,
+      `${interpreted.scope.topic} ${interpreted.scope.searchQuery}`,
       MAX_CANDIDATES * 2,
       options.signal,
       recentOnly ? new Date().getFullYear() - 6 : undefined,

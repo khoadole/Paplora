@@ -41,6 +41,32 @@ export function DiscoveryList({ onCompare }: { onCompare: () => void }) {
         </p>
       ) : null}
 
+      {ws.project?.clarify?.question && !ws.researching ? (
+        <div
+          className="mb-3 rounded-md px-3 py-2"
+          style={{ background: "var(--warn-weak)", color: "var(--warn)" }}
+          role="status"
+        >
+          <p className="text-[13px] font-medium">{ws.project.clarify.question}</p>
+          <p className="mt-0.5 text-[12px]">
+            The results below cover both readings. Pick one to search again more precisely.
+          </p>
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
+            {ws.project.clarify.options.map((option) => (
+              <button
+                key={option}
+                className="btn btn-sm"
+                onClick={() =>
+                  ws.research(ws.project!.id, `${ws.project!.question || ws.project!.title} — specifically in ${option}`)
+                }
+              >
+                {option}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
       {ws.researching ? (
         <div className="mb-3 flex flex-wrap items-center gap-2 text-[12.5px]" role="status" aria-live="polite">
           <IconSearch size={14} style={{ color: "var(--accent)" }} />

@@ -187,6 +187,34 @@ test("title matching accepts the same paper and rejects a different one", () => 
   assert.equal(titlesMatch("Deep learning", "Deep learning for radiology"), false, "a prefix is not a match");
 });
 
+test("a paper still matches its own title when cited with an acronym label", () => {
+  // The prefix comparison this replaced rejected exactly this pair, so a paper
+  // the model named correctly was dropped as "not in the index".
+  assert.equal(
+    titlesMatch(
+      "ST-GCN: Spatial Temporal Graph Convolutional Networks for Skeleton-Based Action Recognition",
+      "Spatial Temporal Graph Convolutional Networks for Skeleton-Based Action Recognition",
+    ),
+    true,
+  );
+  assert.equal(
+    titlesMatch(
+      "Channel-wise Topology Refinement Graph Convolution for Skeleton-Based Action Recognition",
+      "Channel-Wise Topology Refinement Graph Convolution for Skeleton-based Action Recognition",
+    ),
+    true,
+  );
+  // A paper is not its own survey, and a shared topic is not a shared identity.
+  assert.equal(
+    titlesMatch(
+      "Spatial Temporal Graph Convolutional Networks for Skeleton-Based Action Recognition",
+      "A Survey of Graph Convolutional Networks for Skeleton-Based Action Recognition in Video Understanding",
+    ),
+    false,
+  );
+  assert.equal(titlesMatch("Deep learning", "Deep learning for radiology"), false);
+});
+
 test("abstracts are rebuilt from the inverted index in word order", () => {
   const text = abstractFromIndex({ We: [0], present: [1], a: [2], streaming: [3], recogniser: [4], "for embedded hardware.": [5] });
   assert.equal(text, "We present a streaming recogniser for embedded hardware.");

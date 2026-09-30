@@ -20,7 +20,13 @@ export interface ProgressEvent {
 }
 
 export interface DiscoveryPayload {
-  scope: { topic: string; constraints: string[]; searchQuery: string };
+  scope: {
+    topic: string;
+    constraints: string[];
+    searchQuery: string;
+    ambiguity?: string;
+    ambiguityOptions?: string[];
+  };
   overview: string;
   papers: Omit<PaperCandidate, "id" | "projectId" | "createdAt">[];
   usage: { input: number; output: number; calls: number };

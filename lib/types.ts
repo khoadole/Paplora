@@ -18,6 +18,8 @@ export interface Project {
   overview?: string;
   /** Cumulative token usage for this session. */
   usage?: { input: number; output: number; calls: number };
+  /** A question worth asking before trusting these results, with quick answers. */
+  clarify?: { question: string; options: string[] };
 }
 
 /**

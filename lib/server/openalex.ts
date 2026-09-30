@@ -54,17 +54,47 @@ export function titleKey(title: string): string {
     .trim();
 }
 
+const STOP = new Set(["a", "an", "the", "for", "of", "on", "in", "and", "with", "to", "via", "using", "based"]);
+
+/** Words that describe the request rather than the subject; they match no abstract. */
+const QUERY_VERBS = new Set([
+  "compare", "comparison", "comparing", "vs", "versus", "find", "search", "look",
+  "paper", "papers", "study", "studies", "article", "articles", "work", "works",
+  "method", "methods", "approach", "approaches", "recent", "latest", "best", "new",
+  "review", "between", "difference", "differences", "against",
+]);
+
+function tokens(title: string): string[] {
+  // "ST-GCN: Spatial Temporal…" — the acronym before the colon is a label, not
+  // vocabulary, and counting it made a paper fail to match its own title.
+  const withoutLabel = /^[^:]{2,12}:\s/.test(title) ? title.slice(title.indexOf(":") + 1) : title;
+  return titleKey(withoutLabel)
+    .split(" ")
+    .filter((word) => word.length > 1 && !STOP.has(word));
+}
+
 /**
- * A match is accepted only when the normalised titles agree on their first 60
- * characters. Attaching the wrong paper's authors is worse than showing none.
+ * Do two titles name the same paper?
+ *
+ * Measured by how much of the shorter title's vocabulary the longer one
+ * contains, because the same paper is routinely cited with an acronym prefix
+ * ("ST-GCN: Spatial Temporal…"), a subtitle dropped, or different hyphenation.
+ * A prefix comparison rejected exactly those, which silently threw away real
+ * papers the model had named correctly.
  */
 export function titlesMatch(a: string, b: string): boolean {
-  const left = titleKey(a);
-  const right = titleKey(b);
-  if (!left || !right) return false;
-  if (left === right) return true;
-  const head = Math.min(60, left.length, right.length);
-  return head >= 25 && left.slice(0, head) === right.slice(0, head);
+  const left = tokens(a);
+  const right = tokens(b);
+  if (!left.length || !right.length) return false;
+  if (titleKey(a) === titleKey(b)) return true;
+
+  const [short, long] = left.length <= right.length ? [left, right] : [right, left];
+  if (short.length < 3) return false;
+  const vocabulary = new Set(long);
+  const shared = short.filter((word) => vocabulary.has(word)).length;
+  // Nearly all of the shorter title must appear in the longer one, and the two
+  // must not differ wildly in length (a paper is not its own survey).
+  return shared / short.length >= 0.8 && long.length <= short.length * 2.2;
 }
 
 function toRecord(work: OpenAlexWork): ScholarlyRecord {
@@ -91,15 +121,31 @@ function toRecord(work: OpenAlexWork): ScholarlyRecord {
   };
 }
 
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * One index request, with backoff.
+ *
+ * A burst of lookups gets 429ed, and an empty result then reads exactly like
+ * "no such paper" — which is how a rate limit quietly turned into "we could not
+ * find the paper you asked for". Retrying is what keeps those two apart.
+ */
 async function query(url: string, signal?: AbortSignal): Promise<OpenAlexWork[]> {
-  const response = await fetch(url, {
-    headers: { "User-Agent": `Paplora (mailto:${MAILTO})` },
-    signal: signal ?? AbortSignal.timeout(15_000),
-  });
-  if (!response.ok) return [];
-  const payload = (await response.json()) as { results?: OpenAlexWork[] } | OpenAlexWork;
-  if ("results" in payload) return payload.results ?? [];
-  return [payload as OpenAlexWork];
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const response = await fetch(url, {
+      headers: { "User-Agent": `Paplora (mailto:${MAILTO})` },
+      signal: signal ?? AbortSignal.timeout(15_000),
+    });
+    if (response.status === 429 || response.status === 503) {
+      await sleep(400 * (attempt + 1));
+      continue;
+    }
+    if (!response.ok) return [];
+    const payload = (await response.json()) as { results?: OpenAlexWork[] } | OpenAlexWork;
+    if ("results" in payload) return payload.results ?? [];
+    return [payload as OpenAlexWork];
+  }
+  return [];
 }
 
 /** Looks a paper up by DOI first, then by title, and returns nothing if unsure. */
@@ -113,12 +159,25 @@ export async function lookupWork(
       if (works[0]?.display_name) return toRecord(works[0]);
     }
     if (!input.title) return null;
-    const works = await query(
-      `${API}?filter=title.search:${encodeURIComponent(input.title.slice(0, 180))}&per-page=5&mailto=${MAILTO}`,
-      signal,
-    );
-    const hit = works.find((work) => work.display_name && titlesMatch(work.display_name, input.title!));
-    return hit ? toRecord(hit) : null;
+    const title = input.title;
+
+    // Try the whole title, then its most distinctive words. OpenAlex ANDs the
+    // terms it is given, so one stray word from a citation style returns nothing.
+    const core = tokens(title).slice(0, 10).join(" ");
+    const attempts = [
+      `${API}?filter=title.search:${encodeURIComponent(title.slice(0, 180))}&per-page=5&mailto=${MAILTO}`,
+      core && core !== titleKey(title)
+        ? `${API}?filter=title.search:${encodeURIComponent(core)}&per-page=8&mailto=${MAILTO}`
+        : null,
+      `${API}?search=${encodeURIComponent(title.slice(0, 180))}&per-page=8&mailto=${MAILTO}`,
+    ].filter(Boolean) as string[];
+
+    for (const attempt of attempts) {
+      const works = await query(attempt, signal);
+      const hit = works.find((work) => work.display_name && titlesMatch(work.display_name, title));
+      if (hit) return toRecord(hit);
+    }
+    return null;
   } catch {
     return null;
   }
@@ -135,17 +194,33 @@ export async function searchWorks(
   signal?: AbortSignal,
   fromYear?: number,
 ): Promise<ScholarlyRecord[]> {
-  const filters = [`title_and_abstract.search:${text.slice(0, 250)}`];
-  if (fromYear) filters.push(`publication_year:>${fromYear - 1}`);
-  try {
-    const works = await query(
-      `${API}?filter=${encodeURIComponent(filters.join(","))}&per-page=${Math.min(limit, 25)}&sort=relevance_score:desc&mailto=${MAILTO}`,
-      signal,
-    );
-    return works.filter((work) => work.display_name).map(toRecord);
-  } catch {
-    return [];
+  // Terms are ANDed, so a long query matches nothing. Drop the words that
+  // describe the request, then try progressively smaller windows — including
+  // the tail, because "compare X vs Y in skeleton action recognition" carries
+  // its real subject at the end.
+  const words = tokens(text).filter((word) => !QUERY_VERBS.has(word));
+  // Never fewer than three words: "ctr gcn" matches click-through-rate papers,
+  // which is how a skeleton-action query came back full of recommender systems.
+  const variants = [words, words.slice(0, 6), words.slice(-5), words.slice(-4), words.slice(-3)]
+    .filter((set) => set.length >= Math.min(3, words.length))
+    .map((set) => set.join(" "))
+    .filter((value, index, all) => value && all.indexOf(value) === index);
+
+  for (const variant of variants) {
+    const filters = [`title_and_abstract.search:${variant}`];
+    if (fromYear) filters.push(`publication_year:>${fromYear - 1}`);
+    try {
+      const works = await query(
+        `${API}?filter=${encodeURIComponent(filters.join(","))}&per-page=${Math.min(limit, 25)}&sort=relevance_score:desc&mailto=${MAILTO}`,
+        signal,
+      );
+      const records = works.filter((work) => work.display_name).map(toRecord);
+      if (records.length) return records;
+    } catch {
+      // try the next, shorter variant
+    }
   }
+  return [];
 }
 
 /** DOI embedded in a URL, when the URL carries one. */
