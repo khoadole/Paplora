@@ -70,6 +70,9 @@ interface WorkspaceValue {
   progress: ProgressEvent[];
   researching: boolean;
   researchError: string | null;
+  /** One short message shown in the project header; survives a tab change. */
+  notice: string | null;
+  setNotice: (message: string | null) => void;
   selected: SelectedCell | null;
   job: ExtractionJob | null;
   resumable: ExtractionJob | null;
@@ -148,6 +151,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [progress, setProgress] = useState<ProgressEvent[]>([]);
   const [researching, setResearching] = useState(false);
   const [researchError, setResearchError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const research = useRef<AbortController | null>(null);
   const [selected, setSelected] = useState<SelectedCell | null>(null);
   const [job, setJob] = useState<ExtractionJob | null>(null);
@@ -156,6 +160,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [prefs, setPrefsState] = useState<Preferences>({ id: "preferences" });
   const handle = useRef<RunHandle | null>(null);
+  /** Increments on every project load; stale loads discard their results. */
+  const loadToken = useRef(0);
 
   /** Preference writes are optimistic: the UI must never wait on IndexedDB to move. */
   const setPrefs = useCallback((patch: Partial<Preferences>) => {
@@ -181,6 +187,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const loadProject = useCallback(async (id: string | null) => {
+    const token = ++loadToken.current;
+    const fresh = () => token === loadToken.current;
     if (!id) {
       setProject(null);
       setRows([]);
@@ -191,8 +199,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       return;
     }
     const loaded = await repo.getProject(id);
-    if (!loaded) {
-      setProject(null);
+    if (!loaded || !fresh()) {
+      if (!loaded && fresh()) setProject(null);
       return;
     }
     const [projectRows, projectColumns, projectCells, projectSources] = await Promise.all([
@@ -210,6 +218,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       const first = await repo.getPage(source.currentVersionId, 1);
       if (first?.text.trim()) previewMap[source.id] = firstPagePreview(first.text, source.title);
     }
+    if (!fresh()) return;
     setProject(loaded);
     setRows(projectRows);
     setColumns(projectColumns);
@@ -218,9 +227,12 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     setVersions(versionMap);
     setPreviews(previewMap);
 
-    setCandidates(await repo.listCandidates(id));
+    const foundCandidates = await repo.listCandidates(id);
+    if (!fresh()) return;
+    setCandidates(foundCandidates);
 
     const jobs = await repo.listJobs(id);
+    if (!fresh()) return;
     const unfinished = jobs
       .filter((j) => j.stage === "extracting" || j.stage === "queued")
       .sort((a, b) => b.updatedAt - a.updatedAt)[0];
@@ -311,6 +323,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       progress,
       researching,
       researchError,
+      notice,
+      setNotice,
       selected,
       job,
       resumable,
@@ -720,6 +734,8 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       progress,
       researching,
       researchError,
+      notice,
+      setNotice,
       selected,
       job,
       resumable,

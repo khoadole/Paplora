@@ -198,13 +198,25 @@ export function ComparisonTable({
 
   if (!ws.rows.length) {
     return (
-      <div className="flex flex-1 items-center justify-center p-10 text-center">
-        <div className="max-w-sm">
-          <h2 className="text-[15px] font-medium">Nothing to compare yet</h2>
+      <div className="flex flex-1 items-start justify-center p-10">
+        <div className="max-w-md text-center">
+          <h2 className="text-[15px] font-medium">No papers in this comparison yet</h2>
           <p className="mt-1.5 text-[13px] leading-relaxed" style={{ color: "var(--text-2)" }}>
-            Add papers first; each one becomes a row here.
+            {ws.columns.length
+              ? `${ws.columns.length} criteria are ready. Choose papers in the Papers tab and each one becomes a row here.`
+              : "Add papers first; each one becomes a row here."}
           </p>
-          <button className="btn btn-primary mt-3" onClick={onAddPapers}>
+          {/* The criteria already exist — showing them is what makes "it did nothing" wrong. */}
+          {ws.columns.length ? (
+            <ul className="mt-3 flex flex-wrap justify-center gap-1.5">
+              {ws.columns.map((column) => (
+                <li key={column.id} className="badge" title={column.instruction}>
+                  {column.label}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          <button className="btn btn-primary mt-4" onClick={onAddPapers}>
             Add papers
           </button>
         </div>

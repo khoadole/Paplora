@@ -24,15 +24,16 @@ export function CompareTab({ onAddPapers }: { onAddPapers: () => void }) {
   const cellParam = search.get("cell");
 
   // A ?cell= link selects that cell and opens the panel on arrival.
+  const selectCell = ws.selectCell;
+  const selectedRow = ws.selected?.rowId;
+  const selectedColumn = ws.selected?.columnId;
   useEffect(() => {
     if (!cellParam) return;
     const [rowId, columnId] = cellParam.split("~");
     if (!rowId || !columnId) return;
-    if (ws.selected?.rowId !== rowId || ws.selected?.columnId !== columnId) {
-      ws.selectCell({ rowId, columnId });
-    }
+    if (selectedRow !== rowId || selectedColumn !== columnId) selectCell({ rowId, columnId });
     setOpen(true);
-  }, [cellParam, ws]);
+  }, [cellParam, selectCell, selectedRow, selectedColumn]);
 
   const showPanel = open && Boolean(ws.selected);
 

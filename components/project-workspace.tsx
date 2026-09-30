@@ -32,10 +32,14 @@ export function ProjectWorkspace() {
   const [questionOpen, setQuestionOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
-  // The route is the source of truth for which project is open.
+  // The route is the source of truth for which project is open. Depending on the
+  // whole workspace object here re-ran this on every state change, which raced
+  // with in-flight loads and blanked freshly loaded discovery results.
+  const selectProject = ws.selectProject;
+  const openProjectId = ws.project?.id;
   useEffect(() => {
-    if (projectId && ws.project?.id !== projectId) ws.selectProject(projectId);
-  }, [projectId, ws]);
+    if (projectId && openProjectId !== projectId) selectProject(projectId);
+  }, [projectId, openProjectId, selectProject]);
 
   // ?add=1 comes from "Upload papers" on the home screen.
   useEffect(() => {
@@ -226,6 +230,20 @@ export function ProjectWorkspace() {
           </TabButton>
         </div>
       </header>
+
+      {ws.notice ? (
+        <div
+          className="flex flex-wrap items-center gap-2 border-b px-4 py-1.5 text-[12.5px] sm:px-6"
+          style={{ borderColor: "var(--border)", background: "var(--accent-weak)", color: "var(--accent)" }}
+          role="status"
+          aria-live="polite"
+        >
+          <span>{ws.notice}</span>
+          <button className="btn btn-quiet btn-sm" onClick={() => ws.setNotice(null)}>
+            Dismiss
+          </button>
+        </div>
+      ) : null}
 
       {confirmDelete ? (
         <div

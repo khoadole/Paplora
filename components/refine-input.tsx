@@ -39,12 +39,20 @@ export function RefineInput({ onCompare }: { onCompare: () => void }) {
     setNote(null);
     setText("");
     if (intent.id === "columns") {
+      setNote("Suggesting comparison criteria…");
       try {
         const added = await ws.suggestColumns();
-        setNote(added ? `Added ${added} criteria. Edit any of them in Columns.` : "No new criteria were suggested.");
-        onCompare();
+        const message = added
+          ? `Added ${added} comparison criteria.${ws.rows.length ? "" : " Choose papers to fill them."}`
+          : "No new criteria were suggested.";
+        setNote(message);
+        ws.setNotice(message);
+        // Only jump to the table when there is a table to look at.
+        if (added && ws.rows.length) onCompare();
       } catch (error) {
-        setNote(error instanceof Error ? error.message : "Could not suggest criteria.");
+        const message = error instanceof Error ? error.message : "Could not suggest criteria.";
+        setNote(message);
+        ws.setNotice(message);
       }
       return;
     }

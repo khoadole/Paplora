@@ -19,9 +19,11 @@ export function Reader() {
   const search = useSearchParams();
   const [pageNumber, setPageNumber] = useState(Number(search.get("page")) || 1);
 
+  const selectProject = ws.selectProject;
+  const openProjectId = ws.project?.id;
   useEffect(() => {
-    if (params.projectId && ws.project?.id !== params.projectId) ws.selectProject(params.projectId);
-  }, [params.projectId, ws]);
+    if (params.projectId && openProjectId !== params.projectId) selectProject(params.projectId);
+  }, [params.projectId, openProjectId, selectProject]);
 
   const source = ws.sources.find((s) => s.id === params.sourceId) ?? ws.library.find((s) => s.id === params.sourceId);
   const version = source ? ws.versions[source.id] : undefined;
